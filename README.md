@@ -68,6 +68,26 @@ npm run dev
 
 It opens on http://localhost:3000. `npm run dev` and `npm run build` rebuild the index from `content/notes/` first, which takes about a second.
 
+## Run it on Kaggle (2× T4, LFM3 local)
+
+`kaggle/lemma-lfm3-t4x2.ipynb` runs the whole app inside a Kaggle notebook, with no API key. It builds llama.cpp with CUDA for the T4, serves LFM3 1.7B from both GPUs (Q8_0 by default), builds and starts the app against it, and opens a Cloudflare quick tunnel so you can use the web UI from your browser. It also has an `ask()` helper that queries the app from inside the notebook.
+
+1. On Kaggle, go to **Create → Notebook → File → Import Notebook** and upload the `.ipynb`.
+2. Under **Settings**, set **Accelerator** to **GPU T4 x2** and turn **Internet** on.
+3. Click **Run All** in an interactive session and wait for the `trycloudflare.com` link in section 9.
+
+The first run takes about 10–15 minutes, mostly compiling llama.cpp. The compiled binary is saved to `/kaggle/working/bin/llama-server`. Publish it as a dataset and attach that dataset, and later runs skip the build. Optional Kaggle secrets: `GITHUB_TOKEN` (private repository), `HF_TOKEN`, and `ANTHROPIC_API_KEY` (also enables Opus).
+
+## Run it on Google Colab (one GPU, LFM3 local)
+
+`colab/lemma-lfm3-colab.ipynb` does the same on a Colab GPU runtime: the free T4, or an L4 or A100. It builds llama.cpp for the GPU it finds and serves LFM3 1.7B on it. LFM3 is the app's only model in this notebook: hosted-model keys are removed from the app's environment, so every answer is generated on the runtime's GPU. You open the app through Colab's private port proxy, or through an optional public Cloudflare tunnel link.
+
+1. In Colab, go to **File → Open notebook → GitHub**, paste `https://github.com/DS-PNQ/mandatoryslopragapp`, and pick `colab/lemma-lfm3-colab.ipynb`. You can also use **File → Upload notebook**.
+2. Go to **Runtime → Change runtime type** and pick **T4 GPU** (or another GPU).
+3. Choose **Runtime → Run all**. Section 9 prints the links.
+
+Compiling llama.cpp takes about 20–25 minutes on the free tier's 2 CPUs. With `CACHE_TO_DRIVE = True` (the default), the binary is saved to `MyDrive/lemma-cache`, and later sessions on the same GPU type skip the build. An optional `HF_TOKEN` Colab secret speeds up the model download.
+
 ## Tests
 
 ```bash
