@@ -80,13 +80,13 @@ The first run takes about 10–15 minutes, mostly compiling llama.cpp. The compi
 
 ## Run it on Google Colab (one GPU, LFM3 local)
 
-`colab/lemma-lfm3-colab.ipynb` does the same on a Colab GPU runtime: the free T4, or an L4 or A100. It builds llama.cpp for the GPU it finds and serves LFM3 1.7B on it. You open the app through Colab's private port proxy, or through an optional public Cloudflare tunnel link.
+`colab/lemma-lfm3-colab.ipynb` does the same on a Colab GPU runtime: the free T4, or an L4 or A100. It builds llama.cpp for the GPU it finds and serves LFM3 1.7B on it. LFM3 is the app's only model in this notebook: hosted-model keys are removed from the app's environment, so every answer is generated on the runtime's GPU. You open the app through Colab's private port proxy, or through an optional public Cloudflare tunnel link.
 
-1. In Colab, go to **File → Upload notebook** and pick the `.ipynb`. You can also use the **GitHub** tab of **File → Open notebook** if the repository is public.
+1. In Colab, go to **File → Open notebook → GitHub**, paste `https://github.com/DS-PNQ/mandatoryslopragapp`, and pick `colab/lemma-lfm3-colab.ipynb`. You can also use **File → Upload notebook**.
 2. Go to **Runtime → Change runtime type** and pick **T4 GPU** (or another GPU).
 3. Choose **Runtime → Run all**. Section 9 prints the links.
 
-Compiling llama.cpp takes about 20–25 minutes on the free tier's 2 CPUs. With `CACHE_TO_DRIVE = True` (the default), the binary is saved to `MyDrive/lemma-cache`, and later sessions on the same GPU type skip the build. Optional Colab secrets: `GITHUB_TOKEN`, `HF_TOKEN`, `ANTHROPIC_API_KEY`.
+Compiling llama.cpp takes about 20–25 minutes on the free tier's 2 CPUs. With `CACHE_TO_DRIVE = True` (the default), the binary is saved to `MyDrive/lemma-cache`, and later sessions on the same GPU type skip the build. An optional `HF_TOKEN` Colab secret speeds up the model download.
 
 ## Tests
 
