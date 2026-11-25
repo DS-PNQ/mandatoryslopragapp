@@ -68,6 +68,16 @@ npm run dev
 
 It opens on http://localhost:3000. `npm run dev` and `npm run build` rebuild the index from `content/notes/` first, which takes about a second.
 
+## Run it on Kaggle (2× T4, LFM3 local)
+
+`kaggle/lemma-lfm3-t4x2.ipynb` runs the whole app inside a Kaggle notebook, with no API key. It builds llama.cpp with CUDA for the T4, serves LFM3 1.7B from both GPUs (Q8_0 by default), builds and starts the app against it, and opens a Cloudflare quick tunnel so you can use the web UI from your browser. It also has an `ask()` helper that queries the app from inside the notebook.
+
+1. On Kaggle, go to **Create → Notebook → File → Import Notebook** and upload the `.ipynb`.
+2. Under **Settings**, set **Accelerator** to **GPU T4 x2** and turn **Internet** on.
+3. Click **Run All** in an interactive session and wait for the `trycloudflare.com` link in section 9.
+
+The first run takes about 10–15 minutes, mostly compiling llama.cpp. The compiled binary is saved to `/kaggle/working/bin/llama-server`. Publish it as a dataset and attach that dataset, and later runs skip the build. Optional Kaggle secrets: `GITHUB_TOKEN` (private repository), `HF_TOKEN`, and `ANTHROPIC_API_KEY` (also enables Opus).
+
 ## Tests
 
 ```bash
