@@ -31,6 +31,8 @@ export const BlockSchema = z.discriminatedUnion('t', [
     t: z.literal('anim'),
     title: z.string().trim().max(120).optional(),
     code: z.string().trim().min(20).max(12000),
+    /** Spoken lines; the scene starts line i with narrate(self, i). */
+    narration: z.array(z.string().trim().min(2).max(280)).max(10).optional(),
   }),
 ]);
 

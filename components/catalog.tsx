@@ -24,7 +24,7 @@ import {
   type TraceEntry,
 } from '@/lib/a2ui/catalog-api';
 import {renderMathMarkdown, renderTex} from '@/lib/markdown-math';
-import {AlertCircle, BookOpen, Check, Code, Copy, Download, FileText, Film, ImageIcon, Spinner} from './icons';
+import {AlertCircle, BookOpen, Check, Code, Copy, Download, FileText, Film, ImageIcon, Spinner, Volume} from './icons';
 
 function ids(list: unknown): string[] {
   return Array.isArray(list) ? list.filter((x): x is string => typeof x === 'string') : [];
@@ -336,19 +336,34 @@ const Animation = createComponentImplementation(AnimationApi, ({props}) => {
       </figcaption>
       {a.status === 'ready' && a.src ? (
         <>
-          <video className="animation-video" src={a.src} poster={a.poster} controls playsInline preload="metadata" aria-label={title} />
+          <video className="animation-video" src={a.src} poster={a.poster} controls playsInline preload="metadata" aria-label={title}>
+            {a.captions ? <track kind="captions" src={a.captions} srcLang="en" label="Narration" default={!a.voiced} /> : null}
+          </video>
           <div className="animation-actions">
             <a className="text-button" href={a.src} download={`${sceneName(a.code)}.mp4`}>
               <Download size={16} /> Download MP4
             </a>
-            {a.seconds ? <span className="animation-meta num">rendered in {a.seconds.toFixed(1)} s</span> : null}
+            {a.narration?.length ? (
+              <span className="animation-meta">{a.voiced ? 'Narrated by MioTTS-0.6B' : 'Captions only, no voice server'}</span>
+            ) : null}
           </div>
+          {a.narration?.length ? (
+            <details className="scene-code transcript">
+              <summary>
+                <Volume size={16} /> Narration
+              </summary>
+              <ol className="transcript-list">
+                {a.narration.map((line, i) => (
+                  <li key={i}>{line}</li>
+                ))}
+              </ol>
+            </details>
+          ) : null}
         </>
       ) : a.status === 'rendering' ? (
         <div className="animation-stage" role="status" aria-live="polite">
           <Spinner size={24} className="spin" />
           <p>{a.note ?? 'Rendering with Manim'}</p>
-          <p className="animation-sub">Usually 5 to 30 seconds</p>
         </div>
       ) : (
         <div className="animation-stage animation-problem" role={a.status === 'failed' ? 'alert' : undefined}>

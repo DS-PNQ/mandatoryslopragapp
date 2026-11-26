@@ -4,6 +4,8 @@ import {Mark} from '@/components/icons';
 import {NavLinks} from '@/components/NavLinks';
 import {THEME_SCRIPT, ThemeToggle} from '@/components/ThemeToggle';
 import '@fontsource-variable/inter/index.css';
+import '@fontsource/instrument-serif/400.css';
+import '@fontsource/instrument-serif/400-italic.css';
 import '@fontsource-variable/newsreader/opsz.css';
 import '@fontsource-variable/newsreader/opsz-italic.css';
 import '@fontsource-variable/jetbrains-mono/index.css';
@@ -30,6 +32,11 @@ export default function RootLayout({children}: {children: React.ReactNode}) {
         <script dangerouslySetInnerHTML={{__html: THEME_SCRIPT}} />
       </head>
       <body>
+        <div className="liquid-bg" aria-hidden="true">
+          <span className="blob blob-a" />
+          <span className="blob blob-b" />
+          <span className="blob blob-c" />
+        </div>
         <a className="skip" href="#main">
           Skip to content
         </a>

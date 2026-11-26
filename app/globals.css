@@ -25,6 +25,16 @@
   --color-ring: #0e7c86;
   --color-body: #1f2933;
 
+  /* Liquid: glass for navigation and controls, blobs behind everything */
+  --glass: rgba(255, 255, 255, 0.62);
+  --glass-strong: rgba(255, 255, 255, 0.93);
+  --glass-edge: rgba(255, 255, 255, 0.75);
+  --glass-shine: inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 -1px 0 rgba(14, 124, 134, 0.06);
+  --blob-a: rgba(14, 124, 134, 0.22);
+  --blob-b: rgba(56, 152, 199, 0.2);
+  --blob-c: rgba(120, 200, 205, 0.24);
+  --drop: radial-gradient(120% 120% at 30% 20%, #3fb3bd 0%, #0e7c86 55%, #0a5f68 100%);
+
   --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
   --shadow-md: 0 4px 6px -1px rgba(15, 23, 42, 0.08), 0 2px 4px -2px rgba(15, 23, 42, 0.05);
   --shadow-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.1), 0 4px 6px -4px rgba(15, 23, 42, 0.06);
@@ -42,6 +52,8 @@
   --radius-lg: 16px;
 
   --font-ui: 'Inter Variable', Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* Names and titles: a condensed editorial serif. */
+  --font-display: 'Instrument Serif', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
   --serif: 'Newsreader Variable', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
   --mono: 'JetBrains Mono Variable', ui-monospace, 'SFMono-Regular', Menlo, monospace;
 
@@ -95,6 +107,14 @@
     --color-body: #e3e8ef;
     --ink-3: #8692a2;
     --switch-off: #606c7c;
+    --glass: rgba(15, 18, 23, 0.58);
+    --glass-strong: rgba(15, 18, 23, 0.92);
+    --glass-edge: rgba(139, 211, 247, 0.14);
+    --glass-shine: inset 0 1px 0 rgba(199, 235, 255, 0.08), inset 0 -1px 0 rgba(0, 0, 0, 0.4);
+    --blob-a: rgba(139, 211, 247, 0.13);
+    --blob-b: rgba(40, 110, 170, 0.18);
+    --blob-c: rgba(90, 170, 220, 0.1);
+    --drop: radial-gradient(120% 120% at 30% 20%, #d4f0ff 0%, #8bd3f7 50%, #4aa3d6 100%);
     --accent-hover: #c7ebff;
     --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
     --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.6);
@@ -103,6 +123,14 @@
 }
 
 :root[data-theme='dark'] {
+  --glass: rgba(15, 18, 23, 0.58);
+  --glass-strong: rgba(15, 18, 23, 0.92);
+  --glass-edge: rgba(139, 211, 247, 0.14);
+  --glass-shine: inset 0 1px 0 rgba(199, 235, 255, 0.08), inset 0 -1px 0 rgba(0, 0, 0, 0.4);
+  --blob-a: rgba(139, 211, 247, 0.13);
+  --blob-b: rgba(40, 110, 170, 0.18);
+  --blob-c: rgba(90, 170, 220, 0.1);
+  --drop: radial-gradient(120% 120% at 30% 20%, #d4f0ff 0%, #8bd3f7 50%, #4aa3d6 100%);
   --color-primary: #8bd3f7; /* arctic blue */
   --color-primary-strong: #a9defa;
   --color-primary-wash: #10283a;
@@ -352,25 +380,30 @@ code {
 .wordmark {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   color: var(--color-foreground);
   text-decoration: none;
-  font-weight: 700;
-  font-size: 17px;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 27px;
+  line-height: 1;
   letter-spacing: -0.01em;
 }
 .wordmark:hover {
   color: var(--color-foreground);
 }
-.mark-tile {
-  fill: var(--color-primary-strong);
+.mark-stop-a {
+  stop-color: var(--color-primary);
 }
-.mark-l {
-  stroke: var(--color-on-primary);
+.mark-stop-b {
+  stop-color: var(--color-primary-strong);
+}
+.mark-shine {
+  stroke: rgba(255, 255, 255, 0.7);
 }
 .mark-qed {
   fill: var(--color-on-primary);
-  opacity: 0.75;
+  opacity: 0.9;
 }
 
 .masthead-nav {
@@ -602,11 +635,6 @@ code {
   display: grid;
   gap: 8px;
 }
-.session-empty {
-  margin: 0;
-  font-size: 13px;
-  color: var(--color-muted-foreground);
-}
 .session-list {
   list-style: none;
   margin: 0;
@@ -657,11 +685,6 @@ code {
   color: var(--color-muted-foreground);
 }
 
-.nb-cta {
-  margin: 0;
-  justify-content: flex-start;
-  text-align: left;
-}
 
 .scrim {
   display: none;
@@ -680,14 +703,6 @@ code {
   max-width: 920px;
   margin: 0 auto;
   padding: clamp(32px, 8vh, 88px) clamp(16px, 4vw, 48px) var(--space-xl);
-}
-.eyebrow {
-  margin: 0 0 12px;
-  font-size: 12px;
-  font-weight: 650;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--accent);
 }
 .empty-title {
   margin: 0;
@@ -712,10 +727,6 @@ code {
   align-items: center;
   gap: 12px 16px;
   margin-top: var(--space-lg);
-}
-.empty-hint {
-  font-size: 13px;
-  color: var(--color-muted-foreground);
 }
 
 .starter-grid {
@@ -2073,5 +2084,239 @@ a.cite:hover {
   .cell-note {
     max-width: none;
     text-align: left;
+  }
+}
+
+/* ---------- Liquid theme ----------
+   UI UX Pro Max "Liquid Glass": translucent, refracting material used
+   sparingly on navigation and controls (top bar, sources panel, composer,
+   pills); reading surfaces stay solid. Drifting blobs sit behind the page. */
+
+body {
+  background: var(--color-background);
+}
+
+.liquid-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+.blob {
+  position: absolute;
+  width: 46vmax;
+  height: 46vmax;
+  border-radius: 43% 57% 52% 48% / 46% 41% 59% 54%;
+  filter: blur(60px);
+  will-change: transform;
+}
+.blob-a {
+  top: -14vmax;
+  left: -8vmax;
+  background: var(--blob-a);
+  animation: drift-a 38s ease-in-out infinite alternate;
+}
+.blob-b {
+  right: -12vmax;
+  top: 18vh;
+  background: var(--blob-b);
+  animation: drift-b 46s ease-in-out infinite alternate;
+}
+.blob-c {
+  left: 28vw;
+  bottom: -22vmax;
+  background: var(--blob-c);
+  animation: drift-c 52s ease-in-out infinite alternate;
+}
+@keyframes drift-a {
+  to {
+    transform: translate(12vw, 10vh) rotate(40deg) scale(1.08);
+    border-radius: 58% 42% 45% 55% / 52% 60% 40% 48%;
+  }
+}
+@keyframes drift-b {
+  to {
+    transform: translate(-14vw, -6vh) rotate(-30deg) scale(0.94);
+    border-radius: 40% 60% 63% 37% / 55% 44% 56% 45%;
+  }
+}
+@keyframes drift-c {
+  to {
+    transform: translate(-10vw, -12vh) rotate(25deg) scale(1.1);
+    border-radius: 52% 48% 38% 62% / 42% 58% 42% 58%;
+  }
+}
+
+/* Glass material */
+.topbar,
+.nb-panel,
+.segmented,
+.chip,
+.chip-button,
+.toggle,
+.dropzone,
+.starter-card {
+  backdrop-filter: blur(22px) saturate(1.7);
+  -webkit-backdrop-filter: blur(22px) saturate(1.7);
+}
+.topbar {
+  background: var(--glass);
+  border-bottom: 1px solid var(--glass-edge);
+  box-shadow: var(--glass-shine);
+}
+.nb-panel {
+  background: var(--glass);
+  border-right: 1px solid var(--glass-edge);
+}
+.composer {
+  /* Solid, so text scrolling underneath never competes with the question. */
+  background: var(--color-card);
+  border: 1px solid var(--glass-edge);
+  border-radius: 26px;
+  box-shadow: var(--shadow-lg), var(--glass-shine);
+}
+.composer:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-lg), var(--glass-shine), 0 0 0 3px color-mix(in srgb, var(--color-primary) 22%, transparent);
+}
+.composer-dock {
+  background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--color-background) 70%, transparent) 40%);
+}
+.starter-card {
+  background: var(--glass);
+  border: 1px solid var(--glass-edge);
+  border-radius: 22px;
+  box-shadow: var(--glass-shine);
+}
+.dropzone {
+  background: color-mix(in srgb, var(--color-primary-wash) 45%, transparent);
+  border-radius: 18px;
+}
+.segmented {
+  background: color-mix(in srgb, var(--color-muted) 70%, transparent);
+}
+.segmented input:checked + span {
+  background: var(--glass-strong);
+  box-shadow: var(--shadow-sm), var(--glass-shine);
+}
+.chip {
+  background: color-mix(in srgb, var(--color-muted) 75%, transparent);
+}
+
+/* Reading surfaces: solid, softly rounded like a drop */
+.answer {
+  border-radius: 24px;
+  border-color: var(--glass-edge);
+  box-shadow: var(--shadow-md);
+}
+.equation,
+.statement,
+.caveat {
+  border-radius: 16px;
+}
+.statement {
+  border-radius: 4px 16px 16px 4px;
+}
+
+/* The send button is a drop of the primary color */
+.send {
+  background: var(--drop);
+  color: var(--color-on-accent);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.45), inset 0 -2px 4px rgba(0, 0, 0, 0.18),
+    0 4px 12px color-mix(in srgb, var(--color-primary) 35%, transparent);
+}
+.send:hover:not(:disabled) {
+  background: var(--drop);
+  filter: brightness(1.06);
+}
+.send:disabled {
+  background: var(--color-muted);
+  box-shadow: none;
+}
+
+/* A liquid fill while an animation renders */
+.animation-stage {
+  background: linear-gradient(110deg, var(--color-background) 30%, var(--color-primary-wash) 50%, var(--color-background) 70%)
+    0 0 / 300% 100%;
+  animation: flow 2.8s ease-in-out infinite;
+}
+.animation-problem {
+  animation: none;
+  background: var(--color-background);
+}
+@keyframes flow {
+  to {
+    background-position: -150% 0;
+  }
+}
+.animation {
+  border-radius: 20px;
+}
+.animation-badge {
+  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+}
+.transcript-list {
+  margin: 0;
+  padding: 10px 16px 14px 34px;
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-body);
+  border-top: 1px solid var(--color-hairline);
+}
+
+/* Names and titles in the display serif */
+.empty-title,
+.question,
+.library-title,
+.animation-title {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.005em;
+}
+.empty-title {
+  font-size: clamp(2.6rem, 1.6rem + 3.6vw, 4.4rem);
+  line-height: 1;
+  max-width: 16ch;
+}
+.question {
+  font-size: clamp(1.9rem, 1.4rem + 1.6vw, 2.7rem);
+  line-height: 1.08;
+}
+.library-title {
+  font-size: clamp(2.6rem, 1.6rem + 3.4vw, 4.6rem);
+  line-height: 1;
+}
+.animation-title {
+  font-size: 22px;
+  line-height: 1.1;
+}
+.empty-lede {
+  margin-top: 18px;
+}
+
+/* Respect "reduce transparency" and "reduce motion" */
+@media (prefers-reduced-transparency: reduce) {
+  .topbar,
+  .nb-panel,
+  .composer,
+  .starter-card,
+  .segmented,
+  .chip,
+  .dropzone {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: var(--color-card);
+  }
+  .liquid-bg {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .blob,
+  .animation-stage {
+    animation: none !important;
   }
 }

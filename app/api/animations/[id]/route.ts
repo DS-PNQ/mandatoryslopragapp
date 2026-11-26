@@ -11,14 +11,19 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request, {params}: {params: Promise<{id: string}>}): Promise<Response> {
   const {id} = await params;
   const [name, ext = 'mp4'] = id.split('.');
-  if (!isAnimationId(name) || (ext !== 'mp4' && ext !== 'jpg')) return new Response('Not found', {status: 404});
-  const file = path.join(animationDir(), name, ext === 'jpg' ? 'poster.jpg' : 'video.mp4');
+  const files: Record<string, [string, string]> = {
+    mp4: ['video.mp4', 'video/mp4'],
+    jpg: ['poster.jpg', 'image/jpeg'],
+    vtt: ['captions.vtt', 'text/vtt; charset=utf-8'],
+  };
+  if (!isAnimationId(name) || !Object.hasOwn(files, ext)) return new Response('Not found', {status: 404});
+  const file = path.join(/*turbopackIgnore: true*/ animationDir(), name, files[ext][0]);
   const info = await stat(/*turbopackIgnore: true*/ file).catch(() => null);
   if (!info?.isFile()) return new Response('This animation has expired. Ask again to render it.', {status: 404});
-  if (ext === 'jpg') {
+  if (ext !== 'mp4') {
     const body = Readable.toWeb(createReadStream(/*turbopackIgnore: true*/ file)) as ReadableStream;
     return new Response(body, {
-      headers: {'content-type': 'image/jpeg', 'content-length': String(info.size), 'cache-control': 'private, max-age=3600', 'x-content-type-options': 'nosniff'},
+      headers: {'content-type': files[ext][1], 'content-length': String(info.size), 'cache-control': 'private, max-age=3600', 'x-content-type-options': 'nosniff'},
     });
   }
 

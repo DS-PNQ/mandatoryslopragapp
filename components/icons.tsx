@@ -148,6 +148,14 @@ export const Copy = make(
   </>,
 );
 
+export const Volume = make(
+  <>
+    <path d="M11 4.7a.7.7 0 0 0-1.2-.5L6.4 7.6A1.4 1.4 0 0 1 5.4 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.4a1.4 1.4 0 0 1 1 .4l3.4 3.4a.7.7 0 0 0 1.2-.5z" />
+    <path d="M16 9a5 5 0 0 1 0 6" />
+    <path d="M19.4 18.4a9 9 0 0 0 0-12.8" />
+  </>,
+);
+
 export const Check = make(<path d="M20 6 9 17l-5-5" />);
 
 export const Code = make(
@@ -166,13 +174,19 @@ export const RotateCcw = make(
   </>,
 );
 
-/** Lemma's mark: the end-of-proof tombstone in a rounded tile. */
+/** Lemma's mark: a drop of liquid holding the end-of-proof square. */
 export function Mark({size = 28}: {size?: number}) {
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" focusable="false" className="mark">
-      <rect width="32" height="32" rx="8" className="mark-tile" />
-      <path d="M9 9v14h9" className="mark-l" fill="none" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
-      <rect x="19.5" y="17.5" width="5" height="5.5" rx="0.8" className="mark-qed" />
+      <defs>
+        <linearGradient id="lemma-drop" x1="0" y1="0" x2="0.4" y2="1">
+          <stop offset="0" className="mark-stop-a" />
+          <stop offset="1" className="mark-stop-b" />
+        </linearGradient>
+      </defs>
+      <path d="M16 2.5c0 0-10 11.6-10 18a10 10 0 0 0 20 0c0-6.4-10-18-10-18Z" fill="url(#lemma-drop)" />
+      <path d="M10.6 19.4a5.6 5.6 0 0 1 3.2-5" className="mark-shine" fill="none" strokeWidth="1.6" strokeLinecap="round" />
+      <rect x="13.4" y="19.2" width="5.2" height="5.2" rx="0.9" className="mark-qed" />
     </svg>
   );
 }

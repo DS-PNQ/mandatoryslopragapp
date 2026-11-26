@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import type {AnimationEntry, SourceEntry, TraceEntry} from '../a2ui/catalog-api';
 import {extractCode, getManimStatus, renderScene, type ManimStatus, type RenderResult} from '../manim/render';
 import {getRetriever, getIndex} from '../rag/load';
+import {estimateSeconds, speakable, synthesize, ttsAvailable, type VoiceLine} from '../tts/miotts';
 import type {RetrievedPassage} from '../rag/retrieve';
 import {rankUploads, type Attachment, type RankedUploadChunk} from '../uploads/retrieve';
 import {BlockStreamParser, blocksToTranscript, type Block} from './blocks';
@@ -85,7 +86,8 @@ function animationRules(latex: boolean): string {
   return `- The code starts with "from manim import *" (you may also "import numpy as np" and "import math") and defines exactly one class that extends Scene (or MovingCameraScene or ThreeDScene) with a construct method. Use the Manim Community Edition API.
 - 6 to 20 seconds in total. The frame is 16:9, about 14 by 8 units: keep everything inside it, use font_size 28 or more, and fade out or move old objects before adding new ones so nothing overlaps.
 - Build from shapes, NumberPlane, Axes with axes.plot, ParametricFunction, Dot, Line, Arrow, Brace, ValueTracker with always_redraw, and ${text}.
-- No files, network or system access: never use open, os, sys, config, SVGMobject, ImageMobject, Code, add_sound, or any name that starts with an underscore.`;
+- No files, network or system access: never use open, os, sys, config, SVGMobject, ImageMobject, Code, add_sound, or any name that starts with an underscore.
+- Narration: give the anim block a "narration" list of 2 to 6 short spoken sentences, one per step of the scene, each under 200 characters, in plain words with no LaTeX or symbols (say "x squared", "the sum from n equals zero to infinity"). In construct, call narrate(self, i) at the moment sentence i should be heard. It starts the voice and returns the sentence's length in seconds, so time the animations under it to that length: "d = narrate(self, 0)" then "self.play(Create(axes), run_time=d)", or several shorter plays followed by self.wait for the rest. Call each sentence once, in order; narrate is already defined, do not import or define it.`;
 }
 
 function systemPrompt(manim: ManimStatus): string {
@@ -308,7 +310,7 @@ export async function answer(input: AskInput, send: (e: StreamEvent) => void, si
       ? {status: 'rendering', code: b.code, note: 'Rendering with Manim'}
       : {status: 'unavailable', code: b.code, message: manim.reason};
     const id = writer.block(b, initial);
-    if (manim.available) renders.push(renderAnimation(id, b.code, engine, manim, writer, signal));
+    if (manim.available) renders.push(renderAnimation(id, b, engine, manim, writer, signal));
   };
 
   const emit = (bs: Block[]) => {
@@ -409,17 +411,32 @@ export async function answer(input: AskInput, send: (e: StreamEvent) => void, si
   send({type: 'done', transcript: blocksToTranscript(blocks), mode: 'model', engine: engine.id});
 }
 
-/** Renders a scene; on a failure, asks the model once for a fix and renders again. */
+/**
+ * Voices the narration with MioTTS, renders the scene with it, and on a
+ * failure asks the model once for a fix and renders again.
+ */
 async function renderAnimation(
   id: string,
-  firstCode: string,
+  block: Extract<Block, {t: 'anim'}>,
   engine: EngineInfo,
   manim: ManimStatus,
   writer: SurfaceWriter,
   signal?: AbortSignal,
 ): Promise<void> {
-  let code = firstCode;
-  let result: RenderResult = await renderScene(code, signal);
+  let code = block.code;
+  let voice: VoiceLine[] = [];
+  let voiced = 0;
+  if (block.narration?.length) {
+    if (await ttsAvailable()) {
+      writer.animation(id, {status: 'rendering', code, note: 'Recording the narration with MioTTS'});
+      ({lines: voice, voiced} = await synthesize(block.narration, signal));
+    } else {
+      voice = block.narration.map((t) => ({text: speakable(t), duration: estimateSeconds(speakable(t)), wav: null}));
+    }
+    writer.animation(id, {status: 'rendering', code, note: 'Rendering with Manim'});
+  }
+  const narration = voice.map((v) => v.text);
+  let result: RenderResult = await renderScene(code, signal, voice);
   if (!result.ok && (result.stage === 'render' || result.stage === 'validate') && !signal?.aborted) {
     writer.animation(id, {status: 'rendering', code, note: 'Fixing a render error and trying again'});
     const fixed = await repairScene(engine, manim, code, result, signal).catch((e) => {
@@ -429,7 +446,7 @@ async function renderAnimation(
     if (fixed && fixed !== code) {
       code = fixed;
       writer.animation(id, {status: 'rendering', code, note: 'Rendering the corrected scene'});
-      result = await renderScene(code, signal);
+      result = await renderScene(code, signal, voice);
     }
   }
   if (result.ok) {
@@ -438,6 +455,8 @@ async function renderAnimation(
       code,
       src: `/api/animations/${result.id}.mp4`,
       ...(result.poster ? {poster: `/api/animations/${result.id}.jpg`} : {}),
+      ...(result.captions ? {captions: `/api/animations/${result.id}.vtt`} : {}),
+      ...(narration.length ? {narration, voiced: voiced > 0} : {}),
       seconds: result.seconds,
     });
   } else {
@@ -445,6 +464,7 @@ async function renderAnimation(
       status: result.stage === 'unavailable' ? 'unavailable' : 'failed',
       code,
       message: result.error,
+      ...(narration.length ? {narration} : {}),
     });
   }
 }
@@ -456,7 +476,7 @@ async function repairScene(
   failure: Extract<RenderResult, {ok: false}>,
   signal?: AbortSignal,
 ): Promise<string | null> {
-  const system = `You fix Manim Community Edition scenes that failed to render. Keep the same idea and visual plan. Reply with only the corrected Python code in one \`\`\`python block.\n${animationRules(manim.latex)}`;
+  const system = `You fix Manim Community Edition scenes that failed to render. Keep the same idea, visual plan and narrate(self, i) calls. Reply with only the corrected Python code in one \`\`\`python block.\n${animationRules(manim.latex)}`;
   const user = `This scene failed.\n\n\`\`\`python\n${code}\n\`\`\`\n\nError:\n${failure.error}\n${failure.detail ?? ''}`.slice(0, 20_000);
 
   if (engine.id === 'lfm3') {

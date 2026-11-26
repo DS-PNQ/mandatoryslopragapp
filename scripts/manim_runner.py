@@ -15,6 +15,13 @@ from a user's upload, so it is treated as untrusted:
    (no API keys), and a scratch working directory. TeX, when present, runs in
    kpathsea's paranoid mode and without shell escape.
 
+Narration: when <out_dir>/narration.json exists (written by the app, with one
+entry per spoken line: text, duration in seconds, and optionally a WAV file
+synthesized by MioTTS), the scene can call narrate(self, i) to start line i.
+It adds the audio at the current scene time and returns the line's duration,
+so the scene can time its animations to the voice. The runner records when
+each line starts and writes captions.vtt next to the video.
+
 The last line on stdout is a JSON object: {"ok": true, "file": ..., "seconds": ...}
 or {"ok": false, "error": ...}.
 """
@@ -145,6 +152,54 @@ def limit_resources() -> None:
         pass  # not available on this platform
 
 
+def load_narration(out_dir: str) -> list[dict]:
+    path = os.path.join(out_dir, "narration.json")
+    if not os.path.exists(path):
+        return []
+    with open(path, encoding="utf-8") as f:
+        items = json.load(f)
+    clean = []
+    for item in items[:12]:
+        file = item.get("file")
+        # Only files the app wrote into this render's own directory.
+        if file and os.path.dirname(os.path.abspath(file)) != os.path.abspath(out_dir):
+            file = None
+        clean.append({"text": str(item.get("text", ""))[:400], "duration": float(item.get("duration", 2.0)), "file": file})
+    return clean
+
+
+def make_narrate(narration: list[dict], cues: list[tuple[float, float, str]]):
+    def narrate(scene, i):
+        if not isinstance(i, int) or not 0 <= i < len(narration):
+            raise IndexError(f"narrate: there is no narration line {i}; lines are 0 to {len(narration) - 1}")
+        item = narration[i]
+        start = float(scene.time)
+        if item["file"]:
+            scene.add_sound(item["file"])
+        cues.append((start, start + item["duration"], item["text"]))
+        return item["duration"]
+
+    return narrate
+
+
+def vtt_time(t: float) -> str:
+    ms = int(round(t * 1000))
+    h, ms = divmod(ms, 3_600_000)
+    m, ms = divmod(ms, 60_000)
+    sec, ms = divmod(ms, 1000)
+    return f"{h:02d}:{m:02d}:{sec:02d}.{ms:03d}"
+
+
+def write_captions(out_dir: str, cues: list[tuple[float, float, str]]) -> None:
+    if not cues:
+        return
+    lines = ["WEBVTT", ""]
+    for n, (start, end, text) in enumerate(sorted(cues), 1):
+        lines += [str(n), f"{vtt_time(start)} --> {vtt_time(end)}", text.replace("-->", "->"), ""]
+    with open(os.path.join(out_dir, "captions.vtt"), "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+
 def emit(result: dict) -> None:
     sys.stdout.write("\n" + json.dumps(result) + "\n")
     sys.stdout.flush()
@@ -185,10 +240,24 @@ def main() -> int:
         safe = {n: getattr(builtins, n) for n in SAFE_BUILTIN_NAMES if hasattr(builtins, n)}
         safe["__build_class__"] = builtins.__build_class__
         safe["__import__"] = restricted_import
-        namespace = {"__builtins__": safe, "__name__": "lemma_scene"}
+        narration = load_narration(out_dir)
+        cues: list[tuple[float, float, str]] = []
+        namespace = {"__builtins__": safe, "__name__": "lemma_scene", "narrate": make_narrate(narration, cues)}
         exec(compile(ast.parse(code), "scene.py", "exec"), namespace)  # noqa: S102 - validated above
         scene_cls = namespace[scene_name]
+
+        # Let the last spoken line finish before the video ends.
+        scene_construct = scene_cls.construct
+
+        def construct(self):
+            scene_construct(self)
+            end = max((c[1] for c in cues), default=0.0)
+            if end > self.time + 0.05:
+                self.wait(end - self.time + 0.3)
+
+        scene_cls.construct = construct
         scene_cls().render()
+        write_captions(out_dir, cues)
     except BaseException as e:  # report everything, including SystemExit from inside manim
         tb = traceback.format_exc()
         lines = [l for l in tb.splitlines() if 'File "scene.py"' in l or not l.startswith("  File ")]
@@ -218,7 +287,13 @@ def main() -> int:
             last.to_image().convert("RGB").save(os.path.join(out_dir, "poster.jpg"), quality=85)
     except Exception:
         pass
-    emit({"ok": True, "file": video, "seconds": round(time.time() - started, 1), "scene": scene_name})
+    emit({
+        "ok": True,
+        "file": video,
+        "seconds": round(time.time() - started, 1),
+        "scene": scene_name,
+        "captions": os.path.exists(os.path.join(out_dir, "captions.vtt")),
+    })
     return 0
 
 

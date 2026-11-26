@@ -1,7 +1,7 @@
 'use client';
 
 import type {NotebookSource} from './source-store';
-import {AlertCircle, BookOpen, FileText, ImageIcon, MessageSquare, Plus, Spinner, Upload, X} from './icons';
+import {AlertCircle, BookOpen, FileText, ImageIcon, MessageSquare, Spinner, Upload, X} from './icons';
 
 export interface PendingUpload {
   key: string;
@@ -95,7 +95,7 @@ export function SourcesPanel({
           </span>
           <span className="dropzone-text">
             <strong>Add sources</strong>
-            <span>Drop or browse PDF, Word, text or images, up to 15 MB each</span>
+            <span>PDF, Word, text or images</span>
           </span>
         </button>
 
@@ -153,19 +153,11 @@ export function SourcesPanel({
           ))}
         </ul>
 
-        {sources.length === 0 && pending.length === 0 ? (
-          <button type="button" className="text-button nb-cta" onClick={onPick}>
-            <Plus size={16} /> Upload a lecture PDF, a paper, or a photo of a problem
-          </button>
-        ) : null}
-
-        <nav className="session" aria-label="Questions in this session">
-          <h2 className="panel-title">
-            <MessageSquare size={16} /> This session
-          </h2>
-          {entries.length === 0 ? (
-            <p className="session-empty">Questions you ask appear here.</p>
-          ) : (
+        {entries.length > 0 ? (
+          <nav className="session" aria-label="Questions in this session">
+            <h2 className="panel-title">
+              <MessageSquare size={16} /> This session
+            </h2>
             <ol className="session-list">
               {entries.map((e, i) => (
                 <li key={e.surfaceId} data-state={e.state}>
@@ -176,8 +168,8 @@ export function SourcesPanel({
                 </li>
               ))}
             </ol>
-          )}
-        </nav>
+          </nav>
+        ) : null}
 
         {noModel ? (
           <p className="panel-note">

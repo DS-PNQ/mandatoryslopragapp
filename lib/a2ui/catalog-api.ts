@@ -182,6 +182,12 @@ export interface AnimationEntry {
   src?: string;
   /** Still of the final frame, shown before the video plays. */
   poster?: string;
+  /** WebVTT captions of the narration. */
+  captions?: string;
+  /** The spoken lines, shown as a transcript. */
+  narration?: string[];
+  /** True when the narration was voiced by MioTTS; false means captions only. */
+  voiced?: boolean;
   /** Why rendering failed or is unavailable. */
   message?: string;
   /** Short progress note while rendering, e.g. "Fixing a render error". */

@@ -339,20 +339,17 @@ export function Workspace({
 
         {entries.length === 0 ? (
           <section className="empty" aria-labelledby="empty-title">
-            <p className="eyebrow">Notebook</p>
             <h1 id="empty-title" className="empty-title">
               Ask your notes, papers and photos of problems.
             </h1>
             <p className="empty-lede">
-              Add lecture PDFs, Word files or pictures, or use the built-in library of {library.passages} math passages.
-              Every answer is typeset and cites the passage it came from
-              {animation.available ? ', and any idea can be animated with Manim' : ''}.
+              Cited, typeset answers from your files and {library.passages} passages of math notes
+              {animation.available ? ', with narrated Manim animations' : ''}.
             </p>
             <div className="empty-actions">
               <button type="button" className="btn btn-outline" onClick={pickFiles}>
                 <Upload size={18} /> Upload files
               </button>
-              <span className="empty-hint">or drop them anywhere on this page</span>
             </div>
 
             <div className="starter-grid">
@@ -441,7 +438,7 @@ export function Workspace({
               onPaste={onPaste}
               rows={2}
               maxLength={2000}
-              placeholder={enabledSources.length ? 'Ask about your files…' : 'Ask a question, e.g. why is a convergent sequence bounded?'}
+              placeholder="Ask a question"
             />
             <div className="composer-bar">
               <div className="composer-tools">
@@ -483,13 +480,13 @@ export function Workspace({
               </button>
             </div>
           </form>
-          <p className="composer-note" role={blindToImages || nothingSelected ? 'status' : undefined}>
-            {nothingSelected
-              ? 'No sources selected. Turn on the library or a file to ask.'
-              : blindToImages
-                ? `${activeEngine!.label} reads text only. Switch to Opus to ask about images and scanned PDFs.`
-                : 'Enter to ask, Shift+Enter for a new line. Paste an image to add it.'}
-          </p>
+          {nothingSelected || blindToImages ? (
+            <p className="composer-note" role="status">
+              {nothingSelected
+                ? 'No sources selected. Turn on the library or a file to ask.'
+                : `${activeEngine!.label} reads text only. Switch to Opus to ask about images and scanned PDFs.`}
+            </p>
+          ) : null}
         </div>
       </main>
 

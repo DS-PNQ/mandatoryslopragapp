@@ -5,7 +5,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {mkdtempSync, writeFileSync} from 'node:fs';
+import {mkdtempSync, readFileSync, writeFileSync} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {extractCode} from '../lib/manim/render';
@@ -59,4 +59,24 @@ test('a valid scene renders to MP4', {skip: !hasManim && 'Manim is not installed
   const r = runner(head + '        c = Circle(color=TEAL)\n        self.play(Create(c), run_time=0.5)\n        self.wait(0.2)\n') as {ok: boolean; file?: string};
   assert.equal(r.ok, true);
   assert.match(r.file ?? '', /video\.mp4$/);
+});
+
+test('narrate() adds the voice, extends the video and writes captions', {skip: !hasManim && 'Manim is not installed (set MANIM_PYTHON)'}, () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'lemma-voice-'));
+  const rate = 24000;
+  const n = rate * 2;
+  const buf = Buffer.alloc(44 + n * 2);
+  buf.write('RIFF', 0); buf.writeUInt32LE(36 + n * 2, 4); buf.write('WAVE', 8); buf.write('fmt ', 12);
+  buf.writeUInt32LE(16, 16); buf.writeUInt16LE(1, 20); buf.writeUInt16LE(1, 22); buf.writeUInt32LE(rate, 24);
+  buf.writeUInt32LE(rate * 2, 28); buf.writeUInt16LE(2, 32); buf.writeUInt16LE(16, 34); buf.write('data', 36); buf.writeUInt32LE(n * 2, 40);
+  writeFileSync(path.join(dir, 'voice-0.wav'), buf);
+  writeFileSync(path.join(dir, 'narration.json'), JSON.stringify([{text: 'A circle appears.', duration: 2, file: path.join(dir, 'voice-0.wav')}]));
+  const file = path.join(dir, 'scene.py');
+  writeFileSync(file, head + '        narrate(self, 0)\n        self.play(Create(Circle()), run_time=0.5)\n');
+  const r = spawnSync(PY, ['-I', 'scripts/manim_runner.py', file, dir, 'l'], {encoding: 'utf8', timeout: 120_000});
+  const out = JSON.parse(r.stdout.trim().split('\n').at(-1)!);
+  assert.equal(out.ok, true);
+  assert.equal(out.captions, true);
+  const vtt = readFileSync(path.join(dir, 'captions.vtt'), 'utf8');
+  assert.match(vtt, /00:00:00\.000 --> 00:00:02\.000\nA circle appears\./);
 });

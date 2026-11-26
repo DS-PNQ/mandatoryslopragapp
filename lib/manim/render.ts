@@ -20,7 +20,7 @@ export interface ManimStatus {
 }
 
 export type RenderResult =
-  | {ok: true; id: string; seconds: number; poster: boolean}
+  | {ok: true; id: string; seconds: number; poster: boolean; captions: boolean}
   | {ok: false; error: string; detail?: string; stage: 'validate' | 'render' | 'timeout' | 'unavailable'};
 
 const PYTHON = process.env.MANIM_PYTHON || 'python3';
@@ -148,7 +148,13 @@ async function sweep(): Promise<void> {
   );
 }
 
-export async function renderScene(code: string, signal?: AbortSignal): Promise<RenderResult> {
+export interface NarrationLine {
+  text: string;
+  duration: number;
+  wav: Buffer | null;
+}
+
+export async function renderScene(code: string, signal?: AbortSignal, narration: NarrationLine[] = []): Promise<RenderResult> {
   const status = await getManimStatus();
   if (!status.available) return {ok: false, error: status.reason ?? 'Manim is unavailable.', stage: 'unavailable'};
   void sweep();
@@ -158,6 +164,19 @@ export async function renderScene(code: string, signal?: AbortSignal): Promise<R
   await mkdir(/*turbopackIgnore: true*/ dir, {recursive: true});
   const scenePath = path.join(dir, 'scene.py');
   await writeFile(/*turbopackIgnore: true*/ scenePath, code, 'utf8');
+  if (narration.length) {
+    const entries = await Promise.all(
+      narration.map(async (line, i) => {
+        let file: string | null = null;
+        if (line.wav) {
+          file = path.join(dir, `voice-${i}.wav`);
+          await writeFile(/*turbopackIgnore: true*/ file, line.wav);
+        }
+        return {text: line.text, duration: line.duration, file};
+      }),
+    );
+    await writeFile(/*turbopackIgnore: true*/ path.join(dir, 'narration.json'), JSON.stringify(entries), 'utf8');
+  }
   const runner = path.join(process.cwd(), 'scripts', 'manim_runner.py');
 
   const env: Record<string, string | undefined> = {
@@ -187,7 +206,7 @@ export async function renderScene(code: string, signal?: AbortSignal): Promise<R
     const ok = await stat(/*turbopackIgnore: true*/ path.join(dir, 'video.mp4')).then((s) => s.size > 0).catch(() => false);
     if (ok) {
       const poster = await stat(/*turbopackIgnore: true*/ path.join(dir, 'poster.jpg')).then(() => true).catch(() => false);
-      return {ok: true, id, seconds: Number(result.seconds) || 0, poster};
+      return {ok: true, id, seconds: Number(result.seconds) || 0, poster, captions: result.captions === true};
     }
   }
   await rm(/*turbopackIgnore: true*/ dir, {recursive: true, force: true});

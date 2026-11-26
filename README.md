@@ -1,6 +1,6 @@
 # Lemma
 
-Lemma is a math notebook. Add your own sources (lecture PDFs, Word documents, text files, photos of a whiteboard or a problem sheet), keep the built-in library of study notes switched on or off, and ask questions in plain words or LaTeX. Answers are typeset like a page from a handbook: numbered display equations, ordered derivation steps, theorem statements, and a citation on every claim that points back to the passage, page or image it came from. Ask it to animate an idea and the model writes a [Manim](https://www.manim.community/) scene that the server renders to a short video.
+Lemma is a math notebook. Add your own sources (lecture PDFs, Word documents, text files, photos of a whiteboard or a problem sheet), keep the built-in library of study notes switched on or off, and ask questions in plain words or LaTeX. Answers are typeset like a page from a handbook: numbered display equations, ordered derivation steps, theorem statements, and a citation on every claim that points back to the passage, page or image it came from. Ask it to animate an idea and the model writes a [Manim](https://www.manim.community/) scene that the server renders to a short video, narrated by [MioTTS-0.6B](https://huggingface.co/Aratako/MioTTS-0.6B).
 
 It combines two things:
 
@@ -41,6 +41,30 @@ The scene code is written by a model that may have read your uploads, so it is t
 - Videos are kept for 12 hours under the system temp directory (`LEMMA_ANIM_DIR` to change it) and served by `/api/animations/<id>`.
 
 This is defence in depth, not a security boundary as strong as a container. On a shared server, run the app itself in a container or VM.
+
+### Narration with MioTTS-0.6B
+
+Each `anim` block also carries a `narration` list: a few plain-English sentences, one per step. The scene calls `narrate(self, i)` where sentence `i` should be heard; it starts the voice at that point in the video and returns the sentence's length in seconds, so the animation under it can take exactly that long. The runner lets the last sentence finish before the video ends, writes WebVTT captions from the real start times, and the page shows the captions track and a transcript.
+
+The voice is [MioTTS-0.6B](https://huggingface.co/Aratako/MioTTS-0.6B) (Apache 2.0, English and Japanese, built on Qwen3-0.6B with the MioCodec-25Hz-24kHz codec), served by the official [MioTTS-Inference](https://github.com/Aratako/MioTTS-Inference) API. The app is a client of that API. Without it, videos are rendered silently with captions and estimated timing.
+
+```bash
+llama-server -hf Aratako/MioTTS-GGUF -hff MioTTS-0.6B-Q8_0.gguf --alias MioTTS -c 8192 --cont-batching --port 8000
+```
+
+```bash
+git clone https://github.com/Aratako/MioTTS-Inference.git && cd MioTTS-Inference && uv sync
+```
+
+```bash
+uv run python scripts/generate_preset.py --audio your-voice.wav --preset-id en_female --model-id Aratako/MioCodec-25Hz-24kHz --output-dir presets-24k
+```
+
+```bash
+uv run python run_server.py --llm-base-url http://127.0.0.1:8000/v1 --llm-model MioTTS --codec-model Aratako/MioCodec-25Hz-24kHz --presets-dir presets-24k --port 8001
+```
+
+Then set `MIOTTS_URL=http://127.0.0.1:8001` (and `MIOTTS_PRESET` if the preset has another id). The 0.6B model card names the 24 kHz codec, while the inference server defaults to its 44.1 kHz codec and ships presets encoded for that one, which is why the commands above build a preset with the 24 kHz codec. `MIOTTS_REFERENCE` can point at a short clip to clone instead of a preset. The Colab notebook does all of this on the GPU (section 6c). Note that the server's bundled presets and the model card's sample voices were generated with T5Gemma-TTS and gemini-2.5-pro-tts, which the inference repo says rules out commercial use of audio made with them; use a reference clip you have rights to for anything commercial.
 
 ## How a question is answered
 
@@ -121,7 +145,7 @@ The first run takes about 10–15 minutes, mostly compiling llama.cpp. The compi
 2. Go to **Runtime → Change runtime type** and pick **T4 GPU** (or another GPU).
 3. Choose **Runtime → Run all**. Section 9 prints the links.
 
-Section 6b installs Manim (about 2 minutes) so animation answers render on the runtime. Set `INSTALL_MANIM = False` in the settings cell to skip it.
+Section 6b installs Manim (about 2 minutes) so animation answers render on the runtime, and section 6c serves MioTTS-0.6B on the GPU for the narration (3 to 5 minutes the first time). Set `INSTALL_MANIM = False` or `INSTALL_TTS = False` in the settings cell to skip either.
 
 Nothing is compiled by default. llama.cpp comes from conda-forge's CUDA 12 build, which has native code for the T4, L4, A100 and H100 and takes about 2 minutes to install, while the app's `npm ci` and `next build` run in the background. The official llama.cpp Linux binaries are not used because they need glibc 2.38 and Colab runs Ubuntu 22.04. If the prebuilt install fails, or with `LLAMA_INSTALL = "source"`, the notebook compiles llama.cpp for the GPU instead (about 20–25 minutes on the free tier's 2 CPUs) and, with `CACHE_TO_DRIVE = True`, saves it to `MyDrive/lemma-cache` so later sessions reuse it. An optional `HF_TOKEN` Colab secret speeds up the model download.
 
@@ -131,7 +155,7 @@ Nothing is compiled by default. llama.cpp comes from conda-forge's CUDA 12 build
 npm test
 ```
 
-The tests run the Opus and LFM3 paths against local mock servers (no keys or network), and check that every message the agent emits passes the A2UI `MessageProcessor`'s validation for the catalog. They also cover the reasoning-trace filter, the markdown sanitizer, PDF/Word/image parsing, upload retrieval, and the Manim scene validator (which needs only `python3`). The render test runs when `MANIM_PYTHON` points at a Python with Manim installed.
+The tests run the Opus and LFM3 paths against local mock servers (no keys or network), and check that every message the agent emits passes the A2UI `MessageProcessor`'s validation for the catalog. They also cover the reasoning-trace filter, the markdown sanitizer, PDF/Word/image parsing, upload retrieval, the Manim scene validator (which needs only `python3`), and the MioTTS client against a mock of its API. The render test runs when `MANIM_PYTHON` points at a Python with Manim installed.
 
 ## Deploy on Vercel
 
@@ -145,7 +169,7 @@ Each file in `content/notes/` is one note with frontmatter (`id`, `title`, `area
 
 ## Design
 
-The interface was redesigned with the [UI UX Pro Max](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) skill, installed for this project only in `.claude/skills/ui-ux-pro-max/` (Claude Code picks it up when working in this repository). Its design system for Lemma is in `design-system/lemma/`: `MASTER.md` and `tokens.css` as generated (Swiss-minimal layout, Inter), and `pages/notebook.md` for the page-level choices, including the palette: cloud gray and ocean teal in light mode, black and arctic blue in dark mode. Light and dark themes follow the system setting, and the sun/moon button in the top bar overrides it.
+The interface was redesigned with the [UI UX Pro Max](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) skill, installed for this project only in `.claude/skills/ui-ux-pro-max/` (Claude Code picks it up when working in this repository). Its design system for Lemma is in `design-system/lemma/`: `MASTER.md` and `tokens.css` as generated (Swiss-minimal layout, Inter), and `pages/notebook.md` for the page-level choices: a liquid theme (glass on the top bar, sources panel and pills, drifting liquid shapes behind the page, a droplet mark), Instrument Serif for names and titles, and the palette, cloud gray and ocean teal in light mode, black and arctic blue in dark mode. Light and dark themes follow the system setting, and the sun/moon button in the top bar overrides it.
 
 ## Layout
 
@@ -154,6 +178,7 @@ content/notes/              the library (21 notes, 110 passages)
 lib/rag/                    tokenizer, LSA, e-means, IVF + BM25 retrieval
 lib/uploads/                file parsing (PDF, Word, text, images) and upload retrieval
 lib/manim/render.ts         Manim render service (sandbox, queue, cleanup)
+lib/tts/miotts.ts           MioTTS-0.6B narration client
 scripts/manim_runner.py     validates and renders one scene
 lib/a2ui/catalog-api.ts     the math component catalog (Zod schemas)
 lib/agent/                  answer pipeline, model clients, A2UI surface writer

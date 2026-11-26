@@ -17,8 +17,13 @@ The first query tried ("AI research notebook education math study tool") returne
 - Below 900px the panel becomes an off-canvas drawer opened from a "Sources" button (Escape and the scrim close it).
 - Answers are cards. Inside a card, the answer column (68ch) and the margin (sources, retrieval trace) sit side by side and stack under 860px of card width (container query).
 
+## Liquid theme
+
+From the skill's "Liquid Glass" style (`"liquid glass fluid" --domain style`): translucent, blurred material used sparingly on navigation and controls (top bar, sources panel, pills, starter cards), while answers and the question box stay solid so content reads clearly. Three slowly drifting, blurred liquid shapes sit behind the page in the theme colors. The mark is a droplet holding the end-of-proof square, the send button is a glossy drop, and an animation that is rendering shows a flowing fill. Under `prefers-reduced-transparency` the glass turns solid and the shapes are hidden; under `prefers-reduced-motion` nothing drifts or flows.
+
 ## Typography
 
+- Names and titles (wordmark, page titles, questions, animation titles): **Instrument Serif** (OFL), a condensed editorial serif chosen as a distinctive display face in the spirit of Hyperliquid's refined serif titles. Hyperliquid's own font could not be checked from the build environment, and its brand typeface is not assumed to be free to use.
 - UI: **Inter** (MASTER).
 - Answer prose: **Newsreader** (serif) at 18px. Long-form mathematical reading is the core task and the serif sets KaTeX output better than Inter. From the typography search, the "Academic/Research" pairing (Crimson Pro / Atkinson) was the closest match; Newsreader was already bundled and serves the same role.
 - Code and numbers: JetBrains Mono.
