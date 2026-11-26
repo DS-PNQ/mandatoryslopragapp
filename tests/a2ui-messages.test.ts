@@ -53,3 +53,22 @@ test('parser rejects lines outside the block vocabulary', () => {
   assert.equal(out.length, 1);
   assert.equal(rejected.length, 2);
 });
+
+test('animation blocks become Animation components with bound render state', () => {
+  const messages: A2uiMessage[] = [];
+  const w = new SurfaceWriter('answer-2', (m) => messages.push(m));
+  w.begin('Animate a circle');
+  const parser = new BlockStreamParser();
+  const code = 'from manim import *\n\nclass C(Scene):\n    def construct(self):\n        self.play(Create(Circle()))\n';
+  const [block] = parser.push(JSON.stringify({t: 'anim', title: 'A circle', code}) + '\n');
+  assert.equal(block.t, 'anim');
+  const id = w.block(block);
+  w.animation(id, {status: 'ready', code, src: '/api/animations/0123456789abcdef01234567.mp4'});
+  w.finish('done');
+
+  const {processor, errors} = run(messages);
+  assert.deepEqual(errors, []);
+  const surface = processor.model.surfacesMap.get('answer-2')!;
+  assert.equal(surface.componentsModel.get(id)?.type, 'Animation');
+  assert.equal((surface.dataModel.get(`/anims/${id}`) as {status: string}).status, 'ready');
+});

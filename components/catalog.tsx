@@ -2,8 +2,9 @@
 
 import {createComponentImplementation, useA2uiSurface} from '@a2ui/react';
 import {Catalog} from '@a2ui/web_core';
-import {useMemo} from 'react';
+import {useMemo, useState} from 'react';
 import {
+  AnimationApi,
   CaveatApi,
   DerivationApi,
   EquationApi,
@@ -18,10 +19,12 @@ import {
   StatusApi,
   StepApi,
   TraceApi,
+  type AnimationEntry,
   type SourceEntry,
   type TraceEntry,
 } from '@/lib/a2ui/catalog-api';
 import {renderMathMarkdown, renderTex} from '@/lib/markdown-math';
+import {AlertCircle, BookOpen, Check, Code, Copy, Download, FileText, Film, ImageIcon, Spinner} from './icons';
 
 function ids(list: unknown): string[] {
   return Array.isArray(list) ? list.filter((x): x is string => typeof x === 'string') : [];
@@ -141,21 +144,28 @@ const Sources = createComponentImplementation(SourcesApi, ({props}) => {
     <section className="sources">
       <h3 className="margin-title">Sources</h3>
       <ol className="source-list">
-        {items.map((s) => (
-          <li key={s.chunkId} id={`${surface?.id ?? 'answer'}-src-${s.n}`} className="source">
-            <span className="source-n">{s.n}</span>
-            <div className="source-text">
-              <p className="source-heading">{s.heading}</p>
-              <p className="source-note">
-                {s.note},&nbsp;§{s.section}
-              </p>
-              <details className="source-excerpt">
-                <summary>Passage</summary>
-                <MathMarkdown source={s.excerpt} />
-              </details>
-            </div>
-          </li>
-        ))}
+        {items.map((s) => {
+          const upload = s.origin === 'upload';
+          const visual = upload && s.chunkId.endsWith(':visual');
+          return (
+            <li key={s.chunkId} id={`${surface?.id ?? 'answer'}-src-${s.n}`} className="source" data-origin={s.origin ?? 'library'}>
+              <span className="source-n">{s.n}</span>
+              <div className="source-text">
+                <p className="source-heading">{upload ? s.note : s.heading}</p>
+                <p className="source-note">
+                  {upload ? (s.kind === 'image' ? <ImageIcon size={13} /> : <FileText size={13} />) : <BookOpen size={13} />}
+                  <span>{upload ? s.heading : `${s.note}, §${s.section}`}</span>
+                </p>
+                {visual ? null : (
+                  <details className="source-excerpt">
+                    <summary>Passage</summary>
+                    <MathMarkdown source={s.excerpt} />
+                  </details>
+                )}
+              </div>
+            </li>
+          );
+        })}
       </ol>
     </section>
   );
@@ -170,7 +180,7 @@ const Trace = createComponentImplementation(TraceApi, ({props}) => {
   const t = isTrace(props.data) ? props.data : null;
   if (!t) return null;
   const sources = surface?.dataModel.get('/sources');
-  const rows = isSourceList(sources) ? sources : [];
+  const rows = isSourceList(sources) ? sources.filter((s) => s.origin !== 'upload') : [];
   return (
     <section className="trace">
       <h3 className="margin-title">Retrieval</h3>
@@ -266,11 +276,95 @@ const FollowUps = createComponentImplementation(FollowUpsApi, ({props, buildChil
   </nav>
 ));
 
-const FollowUp = createComponentImplementation(FollowUpApi, ({props}) => (
-  <button type="button" className="followup" onClick={() => props.action?.()}>
-    {props.label}
-  </button>
-));
+const FollowUp = createComponentImplementation(FollowUpApi, ({props}) => {
+  const animate = props.label === 'Animate this with Manim';
+  return (
+    <button type="button" className="followup" data-kind={animate ? 'animate' : undefined} onClick={() => props.action?.()}>
+      {animate ? <Film size={16} /> : null}
+      {props.label}
+    </button>
+  );
+});
+
+function isAnimation(v: unknown): v is AnimationEntry {
+  return Boolean(v && typeof v === 'object' && 'status' in v && 'code' in v);
+}
+
+function sceneName(code: string): string {
+  return /class\s+(\w+)\s*\(/.exec(code)?.[1] ?? 'Scene';
+}
+
+function SceneCode({code, open}: {code: string; open?: boolean}) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      /* clipboard blocked */
+    }
+  };
+  return (
+    <details className="scene-code" open={open}>
+      <summary>
+        <Code size={16} /> Manim scene code
+      </summary>
+      <div className="scene-code-body">
+        <button type="button" className="icon-button subtle copy" onClick={copy} aria-label={copied ? 'Copied' : 'Copy code'}>
+          {copied ? <Check size={16} /> : <Copy size={16} />}
+        </button>
+        <pre>
+          <code>{code}</code>
+        </pre>
+      </div>
+    </details>
+  );
+}
+
+const Animation = createComponentImplementation(AnimationApi, ({props}) => {
+  const a = isAnimation(props.data) ? props.data : null;
+  if (!a) return null;
+  const title = props.title || 'Animation';
+  return (
+    <figure className="animation" data-status={a.status}>
+      <figcaption className="animation-head">
+        <span className="animation-badge">
+          <Film size={14} /> Manim
+        </span>
+        <span className="animation-title">{title}</span>
+      </figcaption>
+      {a.status === 'ready' && a.src ? (
+        <>
+          <video className="animation-video" src={a.src} poster={a.poster} controls playsInline preload="metadata" aria-label={title} />
+          <div className="animation-actions">
+            <a className="text-button" href={a.src} download={`${sceneName(a.code)}.mp4`}>
+              <Download size={16} /> Download MP4
+            </a>
+            {a.seconds ? <span className="animation-meta num">rendered in {a.seconds.toFixed(1)} s</span> : null}
+          </div>
+        </>
+      ) : a.status === 'rendering' ? (
+        <div className="animation-stage" role="status" aria-live="polite">
+          <Spinner size={24} className="spin" />
+          <p>{a.note ?? 'Rendering with Manim'}</p>
+          <p className="animation-sub">Usually 5 to 30 seconds</p>
+        </div>
+      ) : (
+        <div className="animation-stage animation-problem" role={a.status === 'failed' ? 'alert' : undefined}>
+          <AlertCircle size={22} />
+          <p>{a.status === 'failed' ? `The scene did not render: ${a.message ?? 'unknown error'}` : a.message}</p>
+          {a.status === 'unavailable' ? (
+            <p className="animation-sub">
+              Render it locally with <code>manim -pql scene.py {sceneName(a.code)}</code>
+            </p>
+          ) : null}
+        </div>
+      )}
+      <SceneCode code={a.code} open={a.status === 'unavailable'} />
+    </figure>
+  );
+});
 
 export const mathCatalog = new Catalog(MATH_CATALOG_ID, '1.0', [
   Page,
@@ -286,4 +380,5 @@ export const mathCatalog = new Catalog(MATH_CATALOG_ID, '1.0', [
   Trace,
   FollowUps,
   FollowUp,
+  Animation,
 ]);

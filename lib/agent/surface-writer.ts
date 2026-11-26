@@ -2,7 +2,7 @@
 // one answer surface. Components are upserted by id, so the root Page is
 // re-sent with a longer child list each time a block arrives.
 
-import {MATH_CATALOG_ID, type SourceEntry, type TraceEntry} from '../a2ui/catalog-api';
+import {MATH_CATALOG_ID, type AnimationEntry, type SourceEntry, type TraceEntry} from '../a2ui/catalog-api';
 import type {Block} from './blocks';
 
 export type A2uiMessage = {version: '1.0'} & Record<string, unknown>;
@@ -34,7 +34,7 @@ export class SurfaceWriter {
 
   begin(question: string) {
     this.send('createSurface', {catalogId: MATH_CATALOG_ID});
-    this.data('/', {question, status: {text: 'Searching the library', busy: true}, sources: [], trace: null});
+    this.data('/', {question, status: {text: 'Searching your sources', busy: true}, sources: [], trace: null, anims: {}});
     this.body.push('question', 'status');
     this.components([
       {id: 'question', component: 'Question', text: {'@path': '/question'}},
@@ -46,17 +46,26 @@ export class SurfaceWriter {
     this.data('/status', {text, busy});
   }
 
-  sources(sources: SourceEntry[], trace: TraceEntry) {
+  /** Lists the passages given to the model; the trace is omitted when the library was not searched. */
+  sources(sources: SourceEntry[], trace: TraceEntry | null) {
     this.data('/sources', sources);
-    this.data('/trace', trace);
-    this.margin.push('sources', 'trace');
-    this.components([
-      {id: 'sources', component: 'Sources', items: {'@path': '/sources'}},
-      {id: 'trace', component: 'Trace', data: {'@path': '/trace'}},
-    ]);
+    this.margin.push('sources');
+    const added: Component[] = [{id: 'sources', component: 'Sources', items: {'@path': '/sources'}}];
+    if (trace) {
+      this.data('/trace', trace);
+      this.margin.push('trace');
+      added.push({id: 'trace', component: 'Trace', data: {'@path': '/trace'}});
+    }
+    this.components(added);
   }
 
-  block(block: Block) {
+  /** Updates the render state of an Animation block. */
+  animation(blockId: string, entry: AnimationEntry) {
+    this.data(`/anims/${blockId}`, entry);
+  }
+
+  /** Adds a block; returns its component id. */
+  block(block: Block, anim?: AnimationEntry): string {
     const id = `b${++this.blockCount}`;
     const added: Component[] = [];
     switch (block.t) {
@@ -100,10 +109,21 @@ export class SurfaceWriter {
         added.push({id, component: 'FollowUps', items: itemIds});
         break;
       }
+      case 'anim': {
+        this.animation(id, anim ?? {status: 'rendering', code: block.code});
+        added.push({
+          id,
+          component: 'Animation',
+          data: {'@path': `/anims/${id}`},
+          ...(block.title ? {title: block.title} : {}),
+        });
+        break;
+      }
     }
     // Keep the status line directly under the question; content goes after it.
     this.body.push(id);
     this.components(added);
+    return id;
   }
 
   finish(text: string) {
