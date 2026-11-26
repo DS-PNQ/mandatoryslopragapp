@@ -1,46 +1,64 @@
+import {z} from 'zod';
 import {answer, type Engine, type StreamEvent, type Turn} from '@/lib/agent/answer';
+import {AttachmentListSchema} from '@/lib/uploads/retrieve';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 120;
+// Long enough for an answer plus one Manim render and one repair.
+export const maxDuration = 300;
 
-interface AskBody {
-  question?: unknown;
-  surfaceId?: unknown;
-  history?: unknown;
-  engine?: unknown;
-}
+const AskSchema = z.object({
+  question: z.string().trim().min(1, 'The question is empty.').max(2000, 'Keep questions under 2,000 characters.'),
+  surfaceId: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/).optional(),
+  history: z.unknown().optional(),
+  engine: z.enum(['opus', 'lfm3']).optional().catch(undefined),
+  attachments: AttachmentListSchema.optional(),
+  useLibrary: z.boolean().optional(),
+  animate: z.boolean().optional(),
+});
 
 function cleanHistory(raw: unknown): Turn[] {
   if (!Array.isArray(raw)) return [];
   return raw
     .filter((t): t is Turn => typeof t?.question === 'string' && typeof t?.answer === 'string')
     .slice(-3)
-    .map((t) => ({question: t.question.slice(0, 500), answer: t.answer.slice(0, 4000)}));
+    .map((t) => ({question: t.question.slice(0, 2000), answer: t.answer.slice(0, 4000)}));
 }
 
 export async function POST(request: Request): Promise<Response> {
-  let body: AskBody;
+  let raw: unknown;
   try {
-    body = (await request.json()) as AskBody;
+    raw = await request.json();
   } catch {
     return Response.json({error: 'Send a JSON body with a "question" field.'}, {status: 400});
   }
-  const question = typeof body.question === 'string' ? body.question.trim() : '';
-  if (!question) return Response.json({error: 'The question is empty.'}, {status: 400});
-  if (question.length > 600) return Response.json({error: 'Keep questions under 600 characters.'}, {status: 413});
-  const surfaceId =
-    typeof body.surfaceId === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(body.surfaceId)
-      ? body.surfaceId
-      : `answer-${Date.now().toString(36)}`;
+  const parsed = AskSchema.safeParse(raw);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const tooBig = issue?.code === 'too_big' || /too (long|large)/i.test(issue?.message ?? '');
+    return Response.json({error: issue?.message ?? 'The request is not valid.'}, {status: tooBig ? 413 : 400});
+  }
+  const body = parsed.data;
+  const surfaceId = body.surfaceId ?? `answer-${Date.now().toString(36)}`;
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const send = (e: StreamEvent) => controller.enqueue(encoder.encode(`${JSON.stringify(e)}\n`));
       try {
-        const engine: Engine | undefined = body.engine === 'opus' || body.engine === 'lfm3' ? body.engine : undefined;
-        await answer({question, surfaceId, engine, history: cleanHistory(body.history)}, send, request.signal);
+        await answer(
+          {
+            question: body.question,
+            surfaceId,
+            engine: body.engine as Engine | undefined,
+            history: cleanHistory(body.history),
+            attachments: body.attachments,
+            useLibrary: body.useLibrary,
+            animate: body.animate,
+          },
+          send,
+          request.signal,
+        );
       } catch (error) {
         console.error('[lemma] answer failed', error);
         const message =

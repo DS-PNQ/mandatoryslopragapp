@@ -127,6 +127,16 @@ export const FollowUpApi = {
     .strict(),
 };
 
+export const AnimationApi = {
+  name: 'Animation',
+  schema: z
+    .object({
+      title: CommonSchemas.DynamicString.optional(),
+      data: CommonSchemas.DynamicValue.describe('Bound to the render state, e.g. {"@path": "/anims/b4"}.'),
+    })
+    .strict(),
+};
+
 export const MATH_COMPONENT_APIS = [
   PageApi,
   QuestionApi,
@@ -141,6 +151,7 @@ export const MATH_COMPONENT_APIS = [
   TraceApi,
   FollowUpsApi,
   FollowUpApi,
+  AnimationApi,
 ];
 
 /** Shape of one entry in the `/sources` data model array. */
@@ -155,7 +166,33 @@ export interface SourceEntry {
   fused: number;
   denseRank: number | null;
   bm25Rank: number | null;
+  /** e-means cell for library passages, -1 for uploads. */
   cell: number;
+  /** Where the passage came from. Absent means the notes library. */
+  origin?: 'library' | 'upload';
+  /** For uploads: pdf, docx, doc, text or image. */
+  kind?: string;
+}
+
+/** Shape of an `/anims/<id>` data model entry. */
+export interface AnimationEntry {
+  status: 'rendering' | 'ready' | 'failed' | 'unavailable';
+  code: string;
+  /** Video URL once ready. */
+  src?: string;
+  /** Still of the final frame, shown before the video plays. */
+  poster?: string;
+  /** WebVTT captions of the narration. */
+  captions?: string;
+  /** The spoken lines, shown as a transcript. */
+  narration?: string[];
+  /** True when the narration was voiced by MioTTS; false means captions only. */
+  voiced?: boolean;
+  /** Why rendering failed or is unavailable. */
+  message?: string;
+  /** Short progress note while rendering, e.g. "Fixing a render error". */
+  note?: string;
+  seconds?: number;
 }
 
 /** Shape of the `/trace` data model object. */

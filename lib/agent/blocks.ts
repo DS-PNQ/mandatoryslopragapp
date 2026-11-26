@@ -27,6 +27,13 @@ export const BlockSchema = z.discriminatedUnion('t', [
   }),
   z.object({t: z.literal('caveat'), md: text}),
   z.object({t: z.literal('followups'), items: z.array(z.string().trim().min(3).max(160)).min(1).max(4)}),
+  z.object({
+    t: z.literal('anim'),
+    title: z.string().trim().max(120).optional(),
+    code: z.string().trim().min(20).max(12000),
+    /** Spoken lines; the scene starts line i with narrate(self, i). */
+    narration: z.array(z.string().trim().min(2).max(280)).max(10).optional(),
+  }),
 ]);
 
 export type Block = z.infer<typeof BlockSchema>;
@@ -106,6 +113,8 @@ export function blocksToTranscript(blocks: Block[]): string {
           return b.items.map((s, i) => `${i + 1}. ${s.md}${s.tex ? ` $$${s.tex}$$` : ''}`).join('\n');
         case 'stmt':
           return `${b.kind}${b.title ? ` (${b.title})` : ''}. ${b.md}${b.cite !== undefined ? ` [${b.cite}]` : ''}`;
+        case 'anim':
+          return `[Manim animation${b.title ? `: ${b.title}` : ''}]`;
         case 'followups':
           return '';
       }
