@@ -41,7 +41,7 @@ MASTER's teal-on-mint with an orange CTA was replaced by two two-color themes: *
 
 ## Components
 
-- **Composer:** source chips (click × to stop using a source for the next question), textarea (Enter to ask, Shift+Enter for a new line, paste an image to add it), paperclip, **Animate** toggle (`aria-pressed`), model segmented control, round orange send button.
+- **Composer:** source chips (click × to stop using a source for the next question), textarea (Enter to ask, Shift+Enter for a new line, paste an image to add it), paperclip, **Animate** toggle (`aria-pressed`), model segmented control, round send button in the primary color.
 - **Animation (Manim):** 16:9 card with a "Manim" badge. States: rendering (striped placeholder, spinner, live status text), ready (video with controls, poster = last frame, never autoplays, download link), failed / unavailable (reason plus the scene code to run locally). Scene code sits in a collapsible block with a copy button.
 - **Follow-ups:** pill buttons; "Animate this with Manim" is styled in the accent color.
 - Icons: Lucide-style SVG strokes at 1.75 width (`components/icons.tsx`). No emoji.
