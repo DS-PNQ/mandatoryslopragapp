@@ -495,7 +495,7 @@ async function repairScene(
   const msg = await client.beta.messages.create(
     {
       model: MODEL,
-      max_tokens: 12000,
+      max_tokens: 32000,
       betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',
       output_config: {effort: 'medium'},
@@ -520,7 +520,7 @@ async function generateWithOpus(
   const stream = client.beta.messages.stream(
     {
       model: MODEL,
-      max_tokens: 16000,
+      max_tokens: Number(process.env.LEMMA_MAX_TOKENS) || 64000,
       betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',
       output_config: {effort: EFFORT},
