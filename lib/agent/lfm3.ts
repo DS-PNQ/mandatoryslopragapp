@@ -133,7 +133,7 @@ export async function* streamLfm3(
       messages,
       stream: true,
       // Room for the reasoning trace plus the answer.
-      max_tokens: 12000,
+      max_tokens: Number(process.env.LFM3_MAX_TOKENS) || 28000,
       ...sampling,
     }),
   });
