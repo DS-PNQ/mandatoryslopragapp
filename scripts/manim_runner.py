@@ -168,10 +168,16 @@ def load_narration(out_dir: str) -> list[dict]:
     return clean
 
 
-def make_narrate(narration: list[dict], cues: list[tuple[float, float, str]]):
-    def narrate(scene, i):
-        if not isinstance(i, int) or not 0 <= i < len(narration):
-            raise IndexError(f"narrate: there is no narration line {i}; lines are 0 to {len(narration) - 1}")
+def make_narrate(narration: list[dict], cues: list[tuple[float, float, str]], used: set[int]):
+    def narrate(scene, i=None):
+        # Small models miscount: an index out of range or a repeat is not worth
+        # failing the whole render over. Take the next unspoken line instead.
+        if not isinstance(i, int) or not 0 <= i < len(narration) or i in used:
+            rest = [n for n in range(len(narration)) if n not in used]
+            if not rest:
+                return 1.0
+            i = rest[0]
+        used.add(i)
         item = narration[i]
         start = float(scene.time)
         if item["file"]:
@@ -180,6 +186,100 @@ def make_narrate(narration: list[dict], cues: list[tuple[float, float, str]]):
         return item["duration"]
 
     return narrate
+
+
+def voice_leftovers(scene, narration: list[dict], cues: list[tuple[float, float, str]], used: set[int]) -> None:
+    """Lines the scene never called narrate() for are spoken after the last
+    one (or from the start, if it called none), so the voice is never lost."""
+    t = max((c[1] for c in cues), default=0.0)
+    for i, item in enumerate(narration):
+        if i in used:
+            continue
+        used.add(i)
+        if item["file"]:
+            scene.add_sound(item["file"], time_offset=t - float(scene.time))
+        cues.append((t, t + item["duration"], item["text"]))
+        t += item["duration"] + 0.2
+
+
+TEX_GLYPHS = {
+    "alpha": "α", "beta": "β", "gamma": "γ", "delta": "δ", "epsilon": "ε", "varepsilon": "ε", "theta": "θ",
+    "lambda": "λ", "mu": "μ", "nu": "ν", "pi": "π", "rho": "ρ", "sigma": "σ", "tau": "τ", "phi": "φ",
+    "varphi": "φ", "chi": "χ", "psi": "ψ", "omega": "ω", "Gamma": "Γ", "Delta": "Δ", "Theta": "Θ",
+    "Lambda": "Λ", "Sigma": "Σ", "Phi": "Φ", "Psi": "Ψ", "Omega": "Ω", "infty": "∞", "sum": "Σ", "prod": "Π",
+    "int": "∫", "partial": "∂", "nabla": "∇", "cdot": "·", "times": "×", "le": "≤", "leq": "≤", "ge": "≥",
+    "geq": "≥", "neq": "≠", "approx": "≈", "to": "→", "rightarrow": "→", "Rightarrow": "⇒", "iff": "⇔",
+    "in": "∈", "subset": "⊂", "cup": "∪", "cap": "∩", "forall": "∀", "exists": "∃", "pm": "±", "sqrt": "√",
+    "ldots": "…", "cdots": "⋯", "langle": "⟨", "rangle": "⟩", "mid": "|", "circ": "∘", "perp": "⊥",
+}
+SUPERSCRIPT = str.maketrans("0123456789+-=()nijk", "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ⁿⁱʲᵏ")
+SUBSCRIPT = str.maketrans("0123456789+-=()aeijknx", "₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎ₐₑᵢⱼₖₙₓ")
+
+
+def group(s: str) -> str:
+    return s if re.fullmatch(r"\\?\w+", s.strip()) else f"({s})"
+
+
+def tex_to_text(tex: str) -> str:
+    """A readable plain-text version of a formula, for when TeX cannot run."""
+    s = tex
+    for _ in range(3):
+        s = re.sub(r"\\[dt]?frac\{([^{}]*)\}\{([^{}]*)\}", lambda m: f"{group(m.group(1))}/{group(m.group(2))}", s)
+        s = re.sub(r"\\sqrt\{([^{}]*)\}", r"√(\1)", s)
+    s = re.sub(r"\\(?:mathbb|mathbf|mathrm|mathcal|text|operatorname|boldsymbol)\{([^{}]*)\}", r"\1", s)
+    s = re.sub(r"\\(left|right|displaystyle|limits|quad|qquad|,|;|!)", " ", s)
+    s = re.sub(r"\\([A-Za-z]+)", lambda m: TEX_GLYPHS.get(m.group(1), m.group(1)), s)
+    s = re.sub(r"\^\{([^{}]*)\}|\^(\w)", lambda m: (m.group(1) or m.group(2)).translate(SUPERSCRIPT), s)
+    s = re.sub(r"_\{([^{}]*)\}|_(\w)", lambda m: (m.group(1) or m.group(2)).translate(SUBSCRIPT), s)
+    s = s.replace("{", "").replace("}", "").replace("\\", " ").replace("&", " ")
+    return re.sub(r"\s+", " ", s).strip() or tex
+
+
+def patch_manim(latex: bool) -> None:
+    """Aliases for API names from older Manim versions that models still
+    write, and, without LaTeX, MathTex and Tex drawn as Text. A formula that
+    TeX cannot compile also falls back to Text instead of failing the render."""
+    import manim
+
+    names = {}
+
+    def fade_in_from(direction):
+        return lambda mob, *a, **kw: manim.FadeIn(mob, shift=direction, **kw)
+
+    names.update({
+        "ShowCreation": manim.Create,
+        "TextMobject": manim.Text,
+        "FadeInFromDown": fade_in_from(manim.UP),
+        "FadeInFromUp": fade_in_from(manim.DOWN),
+        "FadeInFromLarge": lambda mob, scale_factor=2, **kw: manim.FadeIn(mob, scale=1 / scale_factor, **kw),
+        "FadeOutAndShift": lambda mob, direction=manim.DOWN, **kw: manim.FadeOut(mob, shift=direction, **kw),
+        "FadeOutAndShiftDown": lambda mob, **kw: manim.FadeOut(mob, shift=manim.DOWN, **kw),
+    })
+
+    real_math, real_tex = manim.MathTex, manim.Tex
+
+    def text_formula(*parts, **kw):
+        kw = {k: v for k, v in kw.items() if k in ("color", "font_size", "fill_opacity", "stroke_width")}
+        kw.setdefault("font_size", 40)
+        return manim.Text(tex_to_text(" ".join(str(p) for p in parts)), **kw)
+
+    def safe(real):
+        def make(*parts, **kw):
+            if not latex:
+                return text_formula(*parts, **kw)
+            try:
+                return real(*parts, **kw)
+            except (ValueError, RuntimeError, OSError):  # LaTeX compile errors surface as these
+                return text_formula(*parts, **kw)
+        return make
+
+    names["MathTex"] = safe(real_math)
+    names["Tex"] = safe(real_tex)
+    names["TexMobject"] = names["MathTex"]
+    for name, value in names.items():
+        setattr(manim, name, value)
+    if hasattr(manim, "__all__"):
+        manim.__all__ = list(dict.fromkeys([*manim.__all__, *names]))
 
 
 def vtt_time(t: float) -> str:
@@ -237,12 +337,16 @@ def main() -> int:
         manim_config.verbosity = "WARNING"
         manim_config.progress_bar = "none"
 
+        import shutil
+
+        patch_manim(latex=bool(shutil.which("latex") and shutil.which("dvisvgm")))
         safe = {n: getattr(builtins, n) for n in SAFE_BUILTIN_NAMES if hasattr(builtins, n)}
         safe["__build_class__"] = builtins.__build_class__
         safe["__import__"] = restricted_import
         narration = load_narration(out_dir)
         cues: list[tuple[float, float, str]] = []
-        namespace = {"__builtins__": safe, "__name__": "lemma_scene", "narrate": make_narrate(narration, cues)}
+        used: set[int] = set()
+        namespace = {"__builtins__": safe, "__name__": "lemmaslop_scene", "narrate": make_narrate(narration, cues, used)}
         exec(compile(ast.parse(code), "scene.py", "exec"), namespace)  # noqa: S102 - validated above
         scene_cls = namespace[scene_name]
 
@@ -251,6 +355,7 @@ def main() -> int:
 
         def construct(self):
             scene_construct(self)
+            voice_leftovers(self, narration, cues, used)
             end = max((c[1] for c in cues), default=0.0)
             if end > self.time + 0.05:
                 self.wait(end - self.time + 0.3)

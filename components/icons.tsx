@@ -174,19 +174,25 @@ export const RotateCcw = make(
   </>,
 );
 
-/** Lemma's mark: a drop of liquid holding the end-of-proof square. */
+/**
+ * LemmaSlop's mark, "Melting QED": the end-of-proof square with its lower
+ * edge running into two drips. Designed with the logo-design skill
+ * (design-system/lemmaslop/logo/), drawn on its 256 grid.
+ */
 export function Mark({size = 28}: {size?: number}) {
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" focusable="false" className="mark">
+    <svg width={size} height={size} viewBox="0 0 256 256" aria-hidden="true" focusable="false" className="mark">
       <defs>
-        <linearGradient id="lemma-drop" x1="0" y1="0" x2="0.4" y2="1">
+        <linearGradient id="lemmaslop-melt" x1="0" y1="0" x2="0.35" y2="1">
           <stop offset="0" className="mark-stop-a" />
           <stop offset="1" className="mark-stop-b" />
         </linearGradient>
       </defs>
-      <path d="M16 2.5c0 0-10 11.6-10 18a10 10 0 0 0 20 0c0-6.4-10-18-10-18Z" fill="url(#lemma-drop)" />
-      <path d="M10.6 19.4a5.6 5.6 0 0 1 3.2-5" className="mark-shine" fill="none" strokeWidth="1.6" strokeLinecap="round" />
-      <rect x="13.4" y="19.2" width="5.2" height="5.2" rx="0.9" className="mark-qed" />
+      <path
+        d="M64 56A18 18 0 0 1 82 38H174A18 18 0 0 1 192 56V186A15 15 0 0 1 162 186V176A8 8 0 0 0 154 168H130A8 8 0 0 0 122 176V204A15 15 0 0 1 92 204V176A8 8 0 0 0 84 168H82A18 18 0 0 1 64 150Z"
+        fill="url(#lemmaslop-melt)"
+      />
+      <path d="M88 70V98" className="mark-shine" fill="none" strokeWidth="14" strokeLinecap="round" />
     </svg>
   );
 }

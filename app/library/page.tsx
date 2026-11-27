@@ -3,7 +3,7 @@ import {LossChart} from '@/components/LossChart';
 import {getIndex} from '@/lib/rag/load';
 
 export const metadata: Metadata = {
-  title: 'Library and index, Lemma',
+  title: 'Library and index, LemmaSlop',
   description: 'How the notes library is embedded and partitioned with e-means.',
 };
 

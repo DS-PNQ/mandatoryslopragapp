@@ -103,7 +103,15 @@ export class ThinkFilter {
   /** Drop whitespace between </think> and the first answer character. */
   private trimLead = false;
 
-  constructor(private readonly onReasoning: (text: string) => void = () => {}) {}
+  /**
+   * @param format 'jsonl' (answers): text before </think> counts as answer only
+   *   once a JSON block line appears. 'text' (scenes, repairs): any first line
+   *   that is not an opening <think> starts the answer.
+   */
+  constructor(
+    private readonly onReasoning: (text: string) => void = () => {},
+    private readonly format: 'jsonl' | 'text' = 'jsonl',
+  ) {}
 
   push(text: string): string {
     if (this.state === 'answer') {
@@ -147,6 +155,7 @@ export class ThinkFilter {
   }
 
   private looksLikeAnswer(head: string): boolean {
+    if (this.format === 'text') return head.length >= 8 && !'<think>'.startsWith(head.slice(0, 7));
     const nl = head.indexOf('\n');
     const first = (nl >= 0 ? head.slice(0, nl) : '').trim().replace(/^```(?:jsonl?|)$/, '');
     if (!first && nl >= 0 && /^```/.test(head)) return true;
@@ -166,6 +175,10 @@ export async function* streamLfm3(
   signal?: AbortSignal,
   callbacks: Lfm3Callbacks = {},
   spec: LocalModelSpec = lfm3Spec(),
+  /** Extra request fields, e.g. a lower temperature or chat_template_kwargs. */
+  extra: Record<string, unknown> = {},
+  /** 'text' when the reply is free text (code) rather than JSON Lines. */
+  format: 'jsonl' | 'text' = 'jsonl',
 ): AsyncGenerator<string> {
   const config = spec.config();
   if (!config) throw new Error(`${spec.name} is not configured.`);
@@ -178,7 +191,7 @@ export async function* streamLfm3(
       'content-type': 'application/json',
       accept: 'text/event-stream',
       ...(config.apiKey ? {authorization: `Bearer ${config.apiKey}`} : {}),
-      'x-title': 'Lemma',
+      'x-title': 'LemmaSlop',
     },
     body: JSON.stringify({
       model: spec.model,
@@ -187,6 +200,7 @@ export async function* streamLfm3(
       // Room for the reasoning trace plus the answer.
       max_tokens: spec.maxTokens,
       ...sampling,
+      ...extra,
     }),
   });
   if (!res.ok || !res.body) {
@@ -194,7 +208,7 @@ export async function* streamLfm3(
     throw new Error(`${spec.name} endpoint answered ${res.status}: ${detail.slice(0, 200)}`);
   }
 
-  const think = new ThinkFilter(callbacks.onReasoning);
+  const think = new ThinkFilter(callbacks.onReasoning, format);
   let finishReason: string | null = null;
   let model = spec.model;
   let buffer = '';

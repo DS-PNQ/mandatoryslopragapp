@@ -62,6 +62,11 @@ export class SurfaceWriter {
     this.data(`/anims/${blockId}`, entry);
   }
 
+  /** Changes the caption of an Animation block once the scene has a title. */
+  retitle(blockId: string, title: string) {
+    this.components([{id: blockId, component: 'Animation', data: {'@path': `/anims/${blockId}`}, title}]);
+  }
+
   /** Adds a block; returns its component id. */
   block(block: Block, anim?: AnimationEntry): string {
     const id = `b${++this.blockCount}`;

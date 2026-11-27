@@ -1,5 +1,7 @@
 // Query-time retrieval: LSA fold-in -> IVF probe over e-means cells (dense),
-// BM25 over all passages (lexical), fused with reciprocal rank fusion.
+// BM25 over all passages (lexical), and, when an embedding server is
+// configured, a neural dense ranking (lib/rag/hybrid.ts), fused with
+// reciprocal rank fusion.
 
 import {termCounts} from './text';
 import type {Chunk, IndexFile} from './types';
@@ -16,6 +18,10 @@ export interface RetrievedPassage {
   fused: number;
   denseScore: number | null;
   denseRank: number | null;
+  /** Rank in the neural embedding list, when one was given. */
+  neuralRank?: number | null;
+  /** Cross-encoder relevance, when the passage was reranked. */
+  rerankScore?: number | null;
   bm25Score: number | null;
   bm25Rank: number | null;
   cell: number;
@@ -124,7 +130,11 @@ export class Retriever {
     return scores;
   }
 
-  search(query: string, topK = 6, nprobe = this.index.ivf.nprobe): RetrievalResult {
+  /**
+   * @param neural Optional neural dense ranking (chunk indices, best first),
+   *   fused as a third list.
+   */
+  search(query: string, topK = 6, nprobe = this.index.ivf.nprobe, neural?: {index: number; score: number}[]): RetrievalResult {
     const started = performance.now();
     const {vector, known, unknown} = this.embed(query);
     const {k, centroids, lists, clusters} = this.index.ivf;
@@ -191,6 +201,11 @@ export class Retriever {
       const p = entry(doc);
       p.bm25Score = score;
       p.bm25Rank = i + 1;
+      p.fused += 1 / (RRF_K + i + 1);
+    });
+    neural?.slice(0, 20).forEach(({index}, i) => {
+      const p = entry(index);
+      p.neuralRank = i + 1;
       p.fused += 1 / (RRF_K + i + 1);
     });
 

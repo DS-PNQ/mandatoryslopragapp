@@ -32,7 +32,7 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({id: randomBytes(9).toString('base64url'), ...source}, {headers: {'cache-control': 'no-store'}});
   } catch (error) {
     if (error instanceof UploadError) return Response.json({error: error.message}, {status: 422});
-    console.error('[lemma] upload failed', error);
+    console.error('[lemmaslop] upload failed', error);
     return Response.json({error: `${file.name} could not be read.`}, {status: 500});
   }
 }

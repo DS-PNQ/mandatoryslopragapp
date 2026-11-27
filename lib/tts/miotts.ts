@@ -133,7 +133,7 @@ export async function synthesize(lines: string[], signal?: AbortSignal): Promise
           voiced++;
         } else wav = null;
       } catch (error) {
-        console.warn('[lemma] MioTTS line failed', error instanceof Error ? error.message : error);
+        console.warn('[lemmaslop] MioTTS line failed', error instanceof Error ? error.message : error);
         wav = null;
       }
     }

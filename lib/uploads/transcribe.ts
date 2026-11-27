@@ -121,7 +121,7 @@ export async function* transcribePdf(pdfBytes: Uint8Array, config: OcrConfig, si
       text = await transcribePage(config, image, n, pages, signal);
     } catch (error) {
       if (signal?.aborted) throw error;
-      console.warn(`[lemma] OCR page ${n} failed`, error instanceof Error ? error.message : error);
+      console.warn(`[lemmaslop] OCR page ${n} failed`, error instanceof Error ? error.message : error);
     }
     if (!text) {
       failed.push(n);
