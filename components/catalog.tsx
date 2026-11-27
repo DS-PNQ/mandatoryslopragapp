@@ -18,13 +18,11 @@ import {
   StatementApi,
   StatusApi,
   StepApi,
-  TraceApi,
   type AnimationEntry,
   type SourceEntry,
-  type TraceEntry,
 } from '@/lib/a2ui/catalog-api';
 import {renderMathMarkdown, renderTex} from '@/lib/markdown-math';
-import {AlertCircle, BookOpen, Check, Code, Copy, Download, FileText, Film, ImageIcon, Spinner, Volume} from './icons';
+import {AlertCircle, BookOpen, Check, Code, Copy, Download, FileText, Film, ImageIcon, Mark, Spinner, Volume} from './icons';
 
 function ids(list: unknown): string[] {
   return Array.isArray(list) ? list.filter((x): x is string => typeof x === 'string') : [];
@@ -43,25 +41,38 @@ function MathMarkdown({source, inline, className}: {source: string; inline?: boo
   return <Tag className={className} dangerouslySetInnerHTML={{__html: html}} />;
 }
 
-const Page = createComponentImplementation(PageApi, ({props, buildChild}) => (
-  <article className="page">
-    <div className="page-body">
-      {ids(props.body).map((id) => (
-        <div key={id} className="page-block">
-          {buildChild(id)}
+// One chat turn: the question as the user's message, then Lemma's reply with
+// its sources folded underneath.
+const Page = createComponentImplementation(PageApi, ({props, buildChild}) => {
+  // The writer always puts the question first; the runtime renames child ids,
+  // so it is picked by position.
+  const [question, ...reply] = ids(props.body);
+  return (
+    <article className="turn">
+      {question ? buildChild(question) : null}
+      <div className="reply">
+        <span className="reply-avatar" aria-hidden="true">
+          <Mark size={22} />
+        </span>
+        <div className="reply-body">
+          {reply.map((id) => (
+            <div key={id} className="page-block">
+              {buildChild(id)}
+            </div>
+          ))}
+          {ids(props.margin).map((id) => (
+            <div key={id}>{buildChild(id)}</div>
+          ))}
         </div>
-      ))}
-    </div>
-    <aside className="page-margin" aria-label="Sources and retrieval">
-      {ids(props.margin).map((id) => (
-        <div key={id}>{buildChild(id)}</div>
-      ))}
-    </aside>
-  </article>
-));
+      </div>
+    </article>
+  );
+});
 
 const Question = createComponentImplementation(QuestionApi, ({props}) => (
-  <h2 className="question">{props.text}</h2>
+  <div className="ask">
+    <h2 className="question">{props.text}</h2>
+  </div>
 ));
 
 const Status = createComponentImplementation(StatusApi, ({props}) => (
@@ -141,8 +152,16 @@ const Sources = createComponentImplementation(SourcesApi, ({props}) => {
   const items = isSourceList(props.items) ? props.items : [];
   if (items.length === 0) return null;
   return (
-    <section className="sources">
-      <h3 className="margin-title">Sources</h3>
+    <details className="sources">
+      <summary className="sources-summary">
+        <BookOpen size={15} />
+        <span>
+          {items.length} {items.length === 1 ? 'source' : 'sources'}
+        </span>
+        <span className="sources-peek" aria-hidden="true">
+          {[...new Set(items.map((s) => s.note))].slice(0, 3).join(' · ')}
+        </span>
+      </summary>
       <ol className="source-list">
         {items.map((s) => {
           const upload = s.origin === 'upload';
@@ -167,101 +186,7 @@ const Sources = createComponentImplementation(SourcesApi, ({props}) => {
           );
         })}
       </ol>
-    </section>
-  );
-});
-
-function isTrace(v: unknown): v is TraceEntry {
-  return Boolean(v && typeof v === 'object' && 'cells' in v && 'scanned' in v);
-}
-
-const Trace = createComponentImplementation(TraceApi, ({props}) => {
-  const surface = useA2uiSurface();
-  const t = isTrace(props.data) ? props.data : null;
-  if (!t) return null;
-  const sources = surface?.dataModel.get('/sources');
-  const rows = isSourceList(sources) ? sources.filter((s) => s.origin !== 'upload') : [];
-  return (
-    <section className="trace">
-      <h3 className="margin-title">Retrieval</h3>
-      <dl className="trace-stats">
-        <div>
-          <dt>Cells probed</dt>
-          <dd className="num">
-            {t.cells.length} / {t.k}
-          </dd>
-        </div>
-        <div>
-          <dt>Passages scanned</dt>
-          <dd className="num">
-            {t.scanned} / {t.total}
-          </dd>
-        </div>
-        <div>
-          <dt>Dense recall vs. full scan</dt>
-          <dd className="num">{t.denseRecall === null ? 'n/a' : t.denseRecall.toFixed(2)}</dd>
-        </div>
-        <div>
-          <dt>Search time</dt>
-          <dd className="num">{t.elapsedMs.toFixed(1)} ms</dd>
-        </div>
-      </dl>
-      {t.cells.length > 0 ? (
-        <table className="trace-table">
-          <caption>e-means cells nearest the query</caption>
-          <thead>
-            <tr>
-              <th scope="col">Cell</th>
-              <th scope="col">Topic terms</th>
-              <th scope="col" className="num">
-                d²
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {t.cells.map((c) => (
-              <tr key={c.id}>
-                <td className="num">C{c.id}</td>
-                <td>{c.terms.slice(0, 3).join(', ')}</td>
-                <td className="num">{c.distance.toFixed(3)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : null}
-      {rows.length > 0 ? (
-        <table className="trace-table">
-          <caption>Rank fusion (RRF, k = 60)</caption>
-          <thead>
-            <tr>
-              <th scope="col">#</th>
-              <th scope="col" className="num">
-                Dense
-              </th>
-              <th scope="col" className="num">
-                BM25
-              </th>
-              <th scope="col" className="num">
-                Fused
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((s) => (
-              <tr key={s.chunkId}>
-                <td className="num">{s.n}</td>
-                <td className="num">{s.denseRank ?? '–'}</td>
-                <td className="num">{s.bm25Rank ?? '–'}</td>
-                <td className="num">{s.fused.toFixed(4)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : null}
-      {t.unknownTerms.length > 0 ? (
-        <p className="trace-note">Not in the library: {t.unknownTerms.join(', ')}</p>
-      ) : null}
-    </section>
+    </details>
   );
 });
 
@@ -392,7 +317,6 @@ export const mathCatalog = new Catalog(MATH_CATALOG_ID, '1.0', [
   Statement,
   Caveat,
   Sources,
-  Trace,
   FollowUps,
   FollowUp,
   Animation,

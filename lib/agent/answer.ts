@@ -6,27 +6,33 @@ import {estimateSeconds, speakable, synthesize, ttsAvailable, type VoiceLine} fr
 import type {RetrievedPassage} from '../rag/retrieve';
 import {rankUploads, type Attachment, type RankedUploadChunk} from '../uploads/retrieve';
 import {BlockStreamParser, blocksToTranscript, type Block} from './blocks';
-import {LFM3_MODEL, lfm3Config, streamLfm3, type ChatMessage} from './lfm3';
+import {BONSAI_MODEL, LFM3_MODEL, bonsaiConfig, bonsaiSpec, bonsaiVision, lfm3Config, lfm3Spec, streamLfm3, type ChatMessage, type ChatPart, type LocalModelSpec} from './lfm3';
 import {SurfaceWriter, type A2uiMessage} from './surface-writer';
 
 export const MODEL = process.env.LEMMA_MODEL ?? 'claude-opus-5-5';
 const EFFORT = (process.env.LEMMA_EFFORT ?? 'high') as 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
-export type Engine = 'opus' | 'lfm3';
+export type Engine = 'opus' | 'lfm3' | 'bonsai';
 
 export interface EngineInfo {
   id: Engine;
   label: string;
   model: string;
   available: boolean;
-  /** Whether the engine can read images and scanned PDFs. */
+  /** Whether the engine can read images (and, for Opus, scanned PDFs). */
   vision: boolean;
+}
+
+/** OpenAI-compatible endpoint for the open-weight engines; null for Opus. */
+function localSpec(id: Engine): LocalModelSpec | null {
+  return id === 'lfm3' ? lfm3Spec() : id === 'bonsai' ? bonsaiSpec() : null;
 }
 
 export function engines(): EngineInfo[] {
   return [
     {id: 'opus', label: 'Opus 5.5', model: MODEL, available: hasModelCredentials(), vision: true},
     {id: 'lfm3', label: 'LFM3 1.7B', model: LFM3_MODEL, available: lfm3Config() !== null, vision: false},
+    {id: 'bonsai', label: 'Bonsai 27B', model: BONSAI_MODEL, available: bonsaiConfig() !== null, vision: bonsaiVision()},
   ];
 }
 
@@ -247,7 +253,11 @@ export async function answer(input: AskInput, send: (e: StreamEvent) => void, si
   const visuals = attachments.filter((a) => a.media);
   const textCount = sources.length;
   const canSee = Boolean(engine?.vision);
-  if (canSee) visuals.forEach((v) => sources.push(visualEntry(v, sources.length + 1)));
+  // Open models read images as data URLs; scanned PDFs go to Opus only.
+  if (canSee)
+    visuals
+      .filter((v) => engine!.id === 'opus' || v.media!.type !== 'application/pdf')
+      .forEach((v) => sources.push(visualEntry(v, sources.length + 1)));
   writer.sources(
     sources.map((s) => s.entry),
     traceEntry,
@@ -302,7 +312,7 @@ export async function answer(input: AskInput, send: (e: StreamEvent) => void, si
   let animated = false;
   const parser = new BlockStreamParser(
     (line, reason) => console.warn(`[lemma] dropped line (${reason}): ${line.slice(0, 120)}`),
-    engine.id === 'lfm3',
+    engine.id !== 'opus',
   );
 
   const startAnimation = (b: Extract<Block, {t: 'anim'}>) => {
@@ -345,21 +355,30 @@ export async function answer(input: AskInput, send: (e: StreamEvent) => void, si
   }\n\n<question>${question}</question>${animate ? '\n<animate/>' : ''}`;
 
   let stopNote: string | null = null;
-  if (!canSee && visuals.length) {
+  const spec = localSpec(engine.id);
+  const shown = sources.filter((s) => s.visual);
+  const hidden = visuals.length - shown.length;
+  if (hidden > 0) {
     const b: Block = {
       t: 'caveat',
-      md: `${engine.label} reads text only, so ${visuals.length === 1 ? 'the selected image was' : `${visuals.length} selected images were`} not shown to it. Switch to Opus to ask about images and scanned pages.`,
+      md: canSee
+        ? `${engine.label} reads images but not scanned PDF pages, so ${hidden === 1 ? 'one scanned PDF was' : `${hidden} scanned PDFs were`} not shown to it. Switch to Opus to ask about scanned pages.`
+        : `${engine.label} reads text only, so ${hidden === 1 ? 'the selected image was' : `${hidden} selected images were`} not shown to it. Switch to a vision model to ask about images and scanned pages.`,
     };
     blocks.push(b);
     writer.block(b);
   }
 
   const system = systemPrompt(manim);
-  if (engine.id === 'lfm3') {
+  if (spec) {
+    const parts: ChatPart[] = shown.flatMap((s): ChatPart[] => [
+      {type: 'text', text: `Source [${s.entry.n}]: ${s.visual!.name}`},
+      {type: 'image_url', image_url: {url: `data:${s.visual!.media!.type};base64,${s.visual!.media!.data}`}},
+    ]);
     const messages: ChatMessage[] = [
       {role: 'system', content: system + LFM3_EXAMPLE},
       ...turns,
-      {role: 'user', content: userTurn},
+      {role: 'user', content: parts.length ? [...parts, {type: 'text', text: userTurn}] : userTurn},
     ];
     let finish: string | null = null;
     let reasoningWords = 0;
@@ -372,7 +391,7 @@ export async function answer(input: AskInput, send: (e: StreamEvent) => void, si
       }
     };
     const onDone = (r: {finishReason: string | null}) => (finish = r.finishReason);
-    for await (const text of streamLfm3(messages, signal, {onReasoning, onDone})) emit(parser.push(text));
+    for await (const text of streamLfm3(messages, signal, {onReasoning, onDone}, spec)) emit(parser.push(text));
     emit(parser.flush());
     if (finish === 'length') stopNote = 'The answer hit the length limit and stops early.';
   } else {
@@ -479,7 +498,8 @@ async function repairScene(
   const system = `You fix Manim Community Edition scenes that failed to render. Keep the same idea, visual plan and narrate(self, i) calls. Reply with only the corrected Python code in one \`\`\`python block.\n${animationRules(manim.latex)}`;
   const user = `This scene failed.\n\n\`\`\`python\n${code}\n\`\`\`\n\nError:\n${failure.error}\n${failure.detail ?? ''}`.slice(0, 20_000);
 
-  if (engine.id === 'lfm3') {
+  const spec = localSpec(engine.id);
+  if (spec) {
     let text = '';
     for await (const t of streamLfm3(
       [
@@ -487,6 +507,8 @@ async function repairScene(
         {role: 'user', content: user},
       ],
       signal,
+      {},
+      spec,
     ))
       text += t;
     return extractCode(text);

@@ -13,6 +13,8 @@ export interface NotebookSource {
   chars: number;
   media?: {type: string; data: string};
   truncated?: boolean;
+  /** Set once a scanned PDF has been transcribed to text (media is then dropped). */
+  ocr?: {model: string; failed: number[]; total: number};
   enabled: boolean;
   addedAt: number;
 }

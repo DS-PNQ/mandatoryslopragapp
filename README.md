@@ -13,14 +13,27 @@ The left panel works like a notebook's source list. **Add sources** (or drag fil
 
 | File | How it is read |
 |---|---|
-| PDF | Text extracted page by page with `unpdf`; citations name the page. A PDF with no text layer (a scan) is sent to the model as page images instead. |
+| PDF | Text extracted page by page with `unpdf`; citations name the page. A PDF with no text layer (a scan) is transcribed once at upload: each page is rendered to an image and a vision model writes it out as Markdown with LaTeX (see below). Without a transcription model, the scan is sent to Opus as page images. |
 | Word (`.docx`, `.doc`) | Text extracted with `mammoth` (`.docx`) or `word-extractor` (`.doc`). |
 | Text (`.txt`, `.md`, `.tex`) | Used as is. |
 | Image (PNG, JPEG, WebP, GIF) | Sent to the model as an image. Photos over 1.5 MB are scaled to 1800 px in the browser first. |
 
 Files are 15 MB at most and a notebook holds 12. The server only parses an upload and returns its text; it stores nothing. The browser keeps the sources in IndexedDB, so they survive a reload, and sends the selected ones with each question. Each source has a switch, and so does the notes library.
 
-At question time the uploads are split into passages of about 1,100 characters. If everything selected fits in about 14,000 characters it is all sent; otherwise BM25 picks the best six passages plus the opening of each file. Upload passages are numbered first, then up to three library passages (six when nothing is uploaded), then images. Images and scans need a vision model (Opus); LFM3 reads text only, and the composer says so when an image is selected.
+At question time the uploads are split into passages of about 1,100 characters. If everything selected fits in about 14,000 characters it is all sent; otherwise BM25 picks the best six passages plus the opening of each file. Upload passages are numbered first, then up to three library passages (six when nothing is uploaded), then images. Images need a vision model (Opus, or Bonsai with its vision projector); LFM3 reads text only, and the composer says so when an image is selected.
+
+### Scanned PDFs without Opus
+
+When a transcription model is configured, a scanned PDF is read page by page as soon as it is uploaded. The panel shows "Read page 3 of 12" while this runs. After that the scan is stored as ordinary text, so every model can answer from it, search can rank its passages, and citations name the page. A page the model cannot read is marked in the text and counted in the panel; the rest still go through. If a run is interrupted, the scan keeps a **Transcribe** button to start it again.
+
+The transcriber is any OpenAI-compatible vision endpoint:
+
+| Setting | Transcriber |
+|---|---|
+| `BONSAI_BASE_URL` with `BONSAI_VISION=1` | Ternary Bonsai 2.5 27B (the default; the Colab notebook sets this up on GPUs with 20 GB or more) |
+| `LEMMA_OCR_BASE_URL`, `LEMMA_OCR_MODEL` | A dedicated document model, for example olmOCR or dots.ocr served with vLLM. Takes precedence over Bonsai. |
+
+Pages are rendered at 1600 px on the long side with `@napi-rs/canvas`, and sent with thinking turned off and a low temperature, so the model copies rather than paraphrases. Up to 60 pages are read (`LEMMA_OCR_MAX_PAGES`), and scans must be 8 MB or smaller.
 
 ## Animations with Manim
 
@@ -96,6 +109,7 @@ The composer lets you choose the model for each question. Configure at least one
 | Opus 5.5 (Anthropic API) | `ANTHROPIC_API_KEY` |
 | LFM3 1.7B (Liquid AI, open weights), local | `LFM3_BASE_URL` pointing at llama.cpp or Ollama |
 | LFM3 1.7B, hosted on OpenRouter | `OPENROUTER_API_KEY` (model `liquid/lfm-3-1.7b`) |
+| Ternary Bonsai 2.5 27B (PrismML, Apache 2.0), local | `BONSAI_BASE_URL` pointing at llama.cpp; `BONSAI_VISION=1` if the server loaded the mmproj |
 
 Opus requests stream with adaptive thinking at `high` effort and use the server-side refusal fallback. LFM3 requests use the model card's math sampling (temperature 1.0, top_p 0.95, top_k 20). LFM3 reasons by default, so its `<think>` trace is filtered out of the answer and shown as a progress line instead.
 
@@ -118,6 +132,14 @@ llama-server -hf LiquidAI/LFM3-1.7B-GGUF:Q4_K_M --jinja --port 8080
 ```
 
 and set `LFM3_BASE_URL=http://127.0.0.1:8080/v1`. With Ollama 0.40.12 or newer, run `ollama run lfm3` and set `LFM3_BASE_URL=http://127.0.0.1:11434/v1` and `LFM3_MODEL=lfm3`.
+
+To add Ternary Bonsai 2.5 27B (a 7.7 GB ternary-weight reasoning model with vision), use llama.cpp b11556 or newer. Older builds load the `Q2_0` file without an error and produce garbage.
+
+```bash
+llama-server -hf prism-ml/Ternary-Bonsai-2.5-27B-GGUF:Q2_0 --jinja -ngl 99 -fa on -c 40960 -np 1 --min-p 0 --port 8095
+```
+
+Then set `BONSAI_BASE_URL=http://127.0.0.1:8095/v1`. The Colab notebook starts it for you on GPUs with 20 GB or more.
 
 Start the app:
 
@@ -176,7 +198,7 @@ The interface was redesigned with the [UI UX Pro Max](https://github.com/nextlev
 ```
 content/notes/              the library (21 notes, 110 passages)
 lib/rag/                    tokenizer, LSA, e-means, IVF + BM25 retrieval
-lib/uploads/                file parsing (PDF, Word, text, images) and upload retrieval
+lib/uploads/                file parsing (PDF, Word, text, images), scanned-PDF transcription and upload retrieval
 lib/manim/render.ts         Manim render service (sandbox, queue, cleanup)
 lib/tts/miotts.ts           MioTTS-0.6B narration client
 scripts/manim_runner.py     validates and renders one scene

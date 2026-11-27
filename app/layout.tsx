@@ -2,6 +2,11 @@ import type {Metadata, Viewport} from 'next';
 import Link from 'next/link';
 import {Mark} from '@/components/icons';
 import {NavLinks} from '@/components/NavLinks';
+import {NotebookHost} from '@/components/NotebookHost';
+import {engines} from '@/lib/agent/answer';
+import {getManimStatus} from '@/lib/manim/render';
+import {getIndex} from '@/lib/rag/load';
+import {ocrConfig} from '@/lib/uploads/transcribe';
 import {THEME_SCRIPT, ThemeToggle} from '@/components/ThemeToggle';
 import '@fontsource-variable/inter/index.css';
 import '@fontsource/instrument-serif/400.css';
@@ -25,7 +30,11 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({children}: {children: React.ReactNode}) {
+export const dynamic = 'force-dynamic';
+
+export default async function RootLayout({children}: {children: React.ReactNode}) {
+  const index = getIndex();
+  const manim = await getManimStatus();
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -50,6 +59,12 @@ export default function RootLayout({children}: {children: React.ReactNode}) {
             <ThemeToggle />
           </div>
         </header>
+        <NotebookHost
+          engines={engines().map(({id, label, model, available, vision}) => ({id, label, model, available, vision}))}
+          library={{notes: new Set(index.chunks.map((c) => c.noteId)).size, passages: index.chunks.length}}
+          animation={{available: manim.available}}
+          ocr={{available: ocrConfig() !== null, model: ocrConfig()?.label ?? null}}
+        />
         {children}
       </body>
     </html>

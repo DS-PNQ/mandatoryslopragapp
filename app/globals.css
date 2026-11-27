@@ -789,59 +789,6 @@ code {
 
 /* ---------- Answers ---------- */
 
-.answer {
-  container-type: inline-size;
-  margin: var(--space-lg) clamp(12px, 3vw, 40px) 0;
-  padding: clamp(20px, 3.4vw, 40px) clamp(18px, 3.4vw, 44px) clamp(24px, 3vw, 36px);
-  background: var(--color-card);
-  border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-  scroll-margin-top: calc(var(--topbar) + 12px);
-}
-
-.page {
-  display: grid;
-  grid-template-columns: minmax(0, var(--measure)) var(--margin-col);
-  column-gap: var(--space-2xl);
-  align-items: start;
-  justify-content: space-between;
-}
-.page-body {
-  min-width: 0;
-  font-family: var(--serif);
-  font-size: 18px;
-  line-height: 1.62;
-  font-optical-sizing: auto;
-  font-variant-numeric: oldstyle-nums proportional-nums;
-}
-.page-block {
-  animation: settle var(--base) var(--ease) both;
-}
-.page-margin {
-  position: sticky;
-  top: calc(var(--topbar) + 20px);
-  display: grid;
-  gap: var(--space-lg);
-  padding-top: 6px;
-  font-size: 13.5px;
-  line-height: 1.45;
-}
-
-@container (max-width: 860px) {
-  .page {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .page-margin {
-    position: static;
-    margin-top: var(--space-xl);
-    padding-top: var(--space-lg);
-    border-top: 1px solid var(--color-hairline);
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
-    gap: var(--space-xl);
-  }
-}
-
 @keyframes settle {
   from {
     opacity: 0;
@@ -851,18 +798,6 @@ code {
     opacity: 1;
     transform: none;
   }
-}
-
-.question {
-  margin: 0;
-  font-family: var(--font-ui);
-  font-size: clamp(1.4rem, 1.1rem + 1.2vw, 2rem);
-  line-height: 1.2;
-  letter-spacing: -0.02em;
-  font-weight: 700;
-  color: var(--color-foreground);
-  text-wrap: balance;
-  font-variant-numeric: normal;
 }
 
 .status {
@@ -982,7 +917,6 @@ a.cite:hover {
   margin: 26px 0;
 }
 .derivation-title,
-.margin-title,
 .followups-title {
   margin: 0 0 10px;
   font-family: var(--font-ui);
@@ -1266,7 +1200,7 @@ a.cite:hover {
   box-shadow: var(--shadow-sm);
 }
 
-/* ---------- Margin: sources and trace ---------- */
+/* ---------- Sources under a reply ---------- */
 
 .source-list {
   list-style: none;
@@ -1343,28 +1277,7 @@ a.cite:hover {
   margin: 0;
 }
 
-.trace-stats {
-  margin: 0 0 16px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-}
-.trace-stats > div {
-  padding: 8px 10px;
-  border-radius: var(--radius-sm);
-  background: var(--color-background);
-}
-.trace-stats dt {
-  font-size: 12px;
-  color: var(--color-muted-foreground);
-  line-height: 1.3;
-}
-.trace-stats dd {
-  margin: 2px 0 0;
-  font-size: 14px;
-  color: var(--color-foreground);
-}
-
+/* Tables (the library page) */
 .trace-table {
   width: 100%;
   border-collapse: collapse;
@@ -1398,12 +1311,6 @@ a.cite:hover {
 .trace-table th.num {
   text-align: right;
 }
-.trace-note {
-  margin: 0;
-  font-size: 12.5px;
-  color: var(--color-muted-foreground);
-}
-
 .answer-error {
   display: flex;
   flex-wrap: wrap;
@@ -1721,13 +1628,10 @@ a.cite:hover {
   .segmented span {
     padding: 6px 9px;
   }
-  .answer {
-    margin-left: 8px;
-    margin-right: 8px;
-  }
-  .page-body {
+  .reply-body {
     font-size: 17px;
   }
+
 }
 
 /* Touch screens: every control gets a 44px target (UI UX Pro Max, touch-target rule). */
@@ -2204,12 +2108,6 @@ body {
   background: color-mix(in srgb, var(--color-muted) 75%, transparent);
 }
 
-/* Reading surfaces: solid, softly rounded like a drop */
-.answer {
-  border-radius: 24px;
-  border-color: var(--glass-edge);
-  box-shadow: var(--shadow-md);
-}
 .equation,
 .statement,
 .caveat {
@@ -2269,7 +2167,6 @@ body {
 
 /* Names and titles in the display serif */
 .empty-title,
-.question,
 .library-title,
 .animation-title {
   font-family: var(--font-display);
@@ -2280,10 +2177,6 @@ body {
   font-size: clamp(2.6rem, 1.6rem + 3.6vw, 4.4rem);
   line-height: 1;
   max-width: 16ch;
-}
-.question {
-  font-size: clamp(1.9rem, 1.4rem + 1.6vw, 2.7rem);
-  line-height: 1.08;
 }
 .library-title {
   font-size: clamp(2.6rem, 1.6rem + 3.4vw, 4.6rem);
@@ -2319,4 +2212,180 @@ body {
   .animation-stage {
     animation: none !important;
   }
+}
+
+/* ---------- Chat ---------- */
+
+/* One readable column, like a conversation: the user's question on the right,
+   Lemma's reply on the left under the droplet mark. */
+.answer {
+  width: 100%;
+  max-width: var(--chat-width);
+  margin: 0 auto;
+  padding: var(--space-lg) clamp(12px, 3vw, 24px) 0;
+  scroll-margin-top: calc(var(--topbar) + 12px);
+}
+:root {
+  --chat-width: 860px;
+}
+.turn {
+  display: grid;
+  gap: 18px;
+}
+.ask {
+  display: flex;
+  justify-content: flex-end;
+  padding-left: clamp(32px, 12%, 120px);
+  animation: settle var(--base) var(--ease) both;
+}
+.question {
+  margin: 0;
+  padding: 11px 16px;
+  border-radius: 20px 20px 6px 20px;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-family: var(--font-ui);
+  font-size: 15.5px;
+  font-weight: 500;
+  line-height: 1.5;
+  letter-spacing: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--color-primary) 22%, transparent);
+}
+.reply {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+.reply-avatar {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--glass-strong);
+  border: 1px solid var(--glass-edge);
+  box-shadow: var(--glass-shine);
+}
+.reply-body {
+  min-width: 0;
+  padding: 4px 0 0;
+  font-family: var(--serif);
+  font-size: 18px;
+  line-height: 1.62;
+  font-optical-sizing: auto;
+  font-variant-numeric: oldstyle-nums proportional-nums;
+}
+.reply-body > .page-block:first-child .status {
+  margin-top: 2px;
+}
+.reply-body .status {
+  margin: 0 0 14px;
+  padding: 0;
+  background: none;
+  font-size: 12.5px;
+}
+.reply-body .status[data-busy='true'] {
+  background: none;
+}
+.reply-body .equation {
+  background: var(--color-card);
+  border: 1px solid var(--glass-edge);
+}
+.thread > .answer + .answer {
+  margin-top: var(--space-md);
+}
+
+/* Sources: one quiet line under the reply that opens into the list */
+.sources {
+  margin-top: 18px;
+  font-family: var(--font-ui);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.sources-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  min-height: 36px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--glass-edge);
+  background: var(--glass);
+  box-shadow: var(--glass-shine);
+  color: var(--color-muted-foreground);
+  font-weight: 550;
+  cursor: pointer;
+  list-style: none;
+  transition: color var(--fast) var(--ease), border-color var(--fast) var(--ease);
+}
+.sources-summary::-webkit-details-marker {
+  display: none;
+}
+.sources-summary:hover,
+.sources[open] .sources-summary {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--color-primary) 40%, var(--glass-edge));
+}
+.sources-summary svg {
+  flex: none;
+}
+.sources-peek {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  color: var(--ink-3);
+}
+.sources[open] .source-list {
+  margin-top: 10px;
+  padding: 8px;
+  border-radius: 18px;
+  background: var(--color-card);
+  border: 1px solid var(--glass-edge);
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+}
+.thread .composer-dock {
+  padding-left: clamp(12px, 3vw, 24px);
+  padding-right: clamp(12px, 3vw, 24px);
+}
+.thread .composer {
+  max-width: calc(var(--chat-width) - 48px);
+}
+
+/* Scanned PDF transcription in the sources panel */
+.nb-reading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent);
+}
+.nb-progress {
+  flex-basis: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--color-muted);
+  overflow: hidden;
+}
+.nb-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--drop);
+  transition: width var(--base) var(--ease);
+}
+.nb-error {
+  color: var(--color-destructive);
+}
+.nb-action {
+  justify-self: start;
+  margin: 2px 0 0;
+  padding: 2px 0;
+  min-height: 28px;
+  font-size: 12.5px;
 }
