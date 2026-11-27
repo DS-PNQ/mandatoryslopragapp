@@ -16,7 +16,7 @@ export const PageApi = {
   schema: z
     .object({
       body: CommonSchemas.ChildList.describe('Answer content, top to bottom.'),
-      margin: CommonSchemas.ChildList.describe('Marginal apparatus: sources and the retrieval trace.'),
+      margin: CommonSchemas.ChildList.describe('Shown under the reply: the sources it drew on.'),
     })
     .strict(),
 };
@@ -101,15 +101,6 @@ export const SourcesApi = {
     .strict(),
 };
 
-export const TraceApi = {
-  name: 'Trace',
-  schema: z
-    .object({
-      data: CommonSchemas.DynamicValue.describe('Bound to the retrieval trace, e.g. {"@path": "/trace"}.'),
-    })
-    .strict(),
-};
-
 export const FollowUpsApi = {
   name: 'FollowUps',
   allowedChildren: ['FollowUp'],
@@ -148,7 +139,6 @@ export const MATH_COMPONENT_APIS = [
   StatementApi,
   CaveatApi,
   SourcesApi,
-  TraceApi,
   FollowUpsApi,
   FollowUpApi,
   AnimationApi,

@@ -50,7 +50,7 @@ const MAX_SOURCES = 12;
 type Surface = SurfaceModel<ReactCatalogComponent>;
 
 export interface EngineOption {
-  id: 'opus' | 'lfm3';
+  id: 'opus' | 'lfm3' | 'bonsai';
   label: string;
   model: string;
   available: boolean;
@@ -61,10 +61,13 @@ export function Workspace({
   engines,
   library,
   animation,
+  active = true,
 }: {
   engines: EngineOption[];
   library: {notes: number; passages: number};
   animation: {available: boolean};
+  /** False while another tab is shown; the notebook stays mounted. */
+  active?: boolean;
 }) {
   const configured = engines.filter((e) => e.available);
   const [engine, setEngine] = useState<EngineOption['id'] | null>(configured[0]?.id ?? null);
@@ -109,6 +112,10 @@ export function Workspace({
     void loadSources().then((list) => list.length && setSources(list));
     if (readPref('library') === 'off') setUseLibraryState(false);
   }, []);
+
+  useEffect(() => {
+    if (!active) setPanelOpen(false);
+  }, [active]);
 
   useEffect(() => {
     if (!panelOpen) return;
@@ -282,6 +289,14 @@ export function Workspace({
     void addFiles([...e.dataTransfer.files]);
   };
 
+  // A citation points into the folded source list: unfold it before the jump.
+  const openCitation = (e: React.MouseEvent) => {
+    const link = (e.target as HTMLElement).closest('a.cite');
+    const id = link?.getAttribute('href')?.slice(1);
+    const target = id ? document.getElementById(id) : null;
+    target?.closest('details')?.setAttribute('open', '');
+  };
+
   const pickFiles = () => fileRef.current?.click();
   const busy = entries.some((e) => e.state === 'streaming');
   const enabledSources = sources.filter((s) => s.enabled);
@@ -330,7 +345,7 @@ export function Workspace({
         noModel={configured.length === 0}
       />
 
-      <main className="thread" id="main">
+      <main className="thread" id={active ? 'main' : undefined} onClick={openCitation}>
         <div className="thread-bar only-mobile">
           <button type="button" className="chip-button" onClick={() => setPanelOpen(true)} aria-expanded={panelOpen}>
             <PanelLeft size={16} /> Sources <span className="count">{chips.length}</span>
@@ -383,7 +398,13 @@ export function Workspace({
             const surface = surfaces.get(e.surfaceId);
             return (
               <section key={e.surfaceId} id={e.surfaceId} className="answer" aria-busy={e.state === 'streaming'}>
-                {surface ? <A2uiSurface surface={surface} /> : <h2 className="question">{e.question}</h2>}
+                {surface ? (
+                  <A2uiSurface surface={surface} />
+                ) : (
+                  <div className="ask">
+                    <h2 className="question">{e.question}</h2>
+                  </div>
+                )}
                 {e.state === 'error' ? (
                   <p className="answer-error" role="alert">
                     <AlertCircle size={18} />

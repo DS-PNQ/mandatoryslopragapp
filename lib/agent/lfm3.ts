@@ -15,6 +15,57 @@ export const LFM3_MODEL = process.env.LFM3_MODEL ?? 'liquid/lfm-3-1.7b';
 /** LFM3-1.7B model card, "Sampling parameters: Math & STEM". */
 export const LFM3_MATH_SAMPLING = {temperature: 1.0, top_p: 0.95, top_k: 20} as const;
 
+export interface LocalModelSpec {
+  /** Name for errors. */
+  name: string;
+  model: string;
+  config: () => {baseUrl: string; apiKey?: string} | null;
+  sampling: Record<string, number>;
+  maxTokens: number;
+}
+
+/** LFM3 1.7B: math sampling, room for its reasoning plus the answer. */
+export function lfm3Spec(): LocalModelSpec {
+  const override = process.env.LFM3_TEMPERATURE ? Number(process.env.LFM3_TEMPERATURE) : NaN;
+  return {
+    name: 'LFM3',
+    model: LFM3_MODEL,
+    config: lfm3Config,
+    sampling: {...LFM3_MATH_SAMPLING, ...(Number.isFinite(override) ? {temperature: override} : {})},
+    maxTokens: Number(process.env.LFM3_MAX_TOKENS) || 28000,
+  };
+}
+
+// Ternary Bonsai 2.5 27B (PrismML, Apache 2.0): a ternary-weight Qwen3.8-27B
+// reasoning model, served by llama-server from prism-ml/Ternary-Bonsai-2.5-27B-GGUF.
+//   - Q2_0 runs on stock llama.cpp b11556 or newer (older builds load it and output garbage).
+//   - PTQ1_0 / PQ2_0 need the PrismML fork (github.com/PrismML-Eng/llama.cpp).
+//   -> BONSAI_BASE_URL=http://127.0.0.1:8095/v1
+// Sampling is the model card's thinking-mode preset; llama.cpp's default
+// min_p of 0.05 is overridden with 0. BONSAI_VISION=1 when the server was
+// started with the mmproj file, so it can read images.
+export const BONSAI_MODEL = process.env.BONSAI_MODEL ?? 'ternary-bonsai-2.5-27b';
+export const BONSAI_SAMPLING = {temperature: 1.0, top_p: 0.95, top_k: 20, min_p: 0} as const;
+
+export function bonsaiConfig(): {baseUrl: string; apiKey?: string} | null {
+  const baseUrl = process.env.BONSAI_BASE_URL?.trim().replace(/\/+$/, '');
+  return baseUrl ? {baseUrl, apiKey: process.env.BONSAI_API_KEY || undefined} : null;
+}
+
+export function bonsaiSpec(): LocalModelSpec {
+  return {
+    name: 'Ternary Bonsai',
+    model: BONSAI_MODEL,
+    config: bonsaiConfig,
+    sampling: {...BONSAI_SAMPLING},
+    maxTokens: Number(process.env.BONSAI_MAX_TOKENS) || 28000,
+  };
+}
+
+export function bonsaiVision(): boolean {
+  return /^(1|true|yes|on)$/i.test(process.env.BONSAI_VISION ?? '');
+}
+
 export function lfm3Config(): {baseUrl: string; apiKey?: string} | null {
   const explicit = process.env.LFM3_BASE_URL?.replace(/\/+$/, '');
   const apiKey = process.env.LFM3_API_KEY || process.env.OPENROUTER_API_KEY || undefined;
@@ -23,9 +74,11 @@ export function lfm3Config(): {baseUrl: string; apiKey?: string} | null {
   return null;
 }
 
+export type ChatPart = {type: 'text'; text: string} | {type: 'image_url'; image_url: {url: string}};
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
-  content: string;
+  content: string | ChatPart[];
 }
 
 export interface Lfm3Result {
@@ -112,12 +165,11 @@ export async function* streamLfm3(
   messages: ChatMessage[],
   signal?: AbortSignal,
   callbacks: Lfm3Callbacks = {},
+  spec: LocalModelSpec = lfm3Spec(),
 ): AsyncGenerator<string> {
-  const config = lfm3Config();
-  if (!config) throw new Error('LFM3 is not configured. Set LFM3_BASE_URL or OPENROUTER_API_KEY.');
-
-  const override = process.env.LFM3_TEMPERATURE ? Number(process.env.LFM3_TEMPERATURE) : NaN;
-  const sampling = {...LFM3_MATH_SAMPLING, ...(Number.isFinite(override) ? {temperature: override} : {})};
+  const config = spec.config();
+  if (!config) throw new Error(`${spec.name} is not configured.`);
+  const sampling = spec.sampling;
 
   const res = await fetch(`${config.baseUrl}/chat/completions`, {
     method: 'POST',
@@ -129,22 +181,22 @@ export async function* streamLfm3(
       'x-title': 'Lemma',
     },
     body: JSON.stringify({
-      model: LFM3_MODEL,
+      model: spec.model,
       messages,
       stream: true,
       // Room for the reasoning trace plus the answer.
-      max_tokens: Number(process.env.LFM3_MAX_TOKENS) || 28000,
+      max_tokens: spec.maxTokens,
       ...sampling,
     }),
   });
   if (!res.ok || !res.body) {
     const detail = await res.text().catch(() => '');
-    throw new Error(`LFM3 endpoint answered ${res.status}: ${detail.slice(0, 200)}`);
+    throw new Error(`${spec.name} endpoint answered ${res.status}: ${detail.slice(0, 200)}`);
   }
 
   const think = new ThinkFilter(callbacks.onReasoning);
   let finishReason: string | null = null;
-  let model = LFM3_MODEL;
+  let model = spec.model;
   let buffer = '';
   const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
   for (;;) {
@@ -164,7 +216,7 @@ export async function* streamLfm3(
       } catch {
         continue;
       }
-      if (chunk.error) throw new Error(`LFM3 stream error: ${chunk.error.message ?? 'unknown'}`);
+      if (chunk.error) throw new Error(`${spec.name} stream error: ${chunk.error.message ?? 'unknown'}`);
       if (typeof chunk.model === 'string') model = chunk.model;
       const choice = chunk.choices?.[0];
       if (choice?.finish_reason) finishReason = choice.finish_reason;

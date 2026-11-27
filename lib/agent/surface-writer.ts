@@ -46,17 +46,15 @@ export class SurfaceWriter {
     this.data('/status', {text, busy});
   }
 
-  /** Lists the passages given to the model; the trace is omitted when the library was not searched. */
+  /**
+   * Lists the passages given to the model. The retrieval trace is kept in the
+   * data model (for tests and debugging) but not drawn in the chat.
+   */
   sources(sources: SourceEntry[], trace: TraceEntry | null) {
     this.data('/sources', sources);
+    if (trace) this.data('/trace', trace);
     this.margin.push('sources');
-    const added: Component[] = [{id: 'sources', component: 'Sources', items: {'@path': '/sources'}}];
-    if (trace) {
-      this.data('/trace', trace);
-      this.margin.push('trace');
-      added.push({id: 'trace', component: 'Trace', data: {'@path': '/trace'}});
-    }
-    this.components(added);
+    this.components([{id: 'sources', component: 'Sources', items: {'@path': '/sources'}}]);
   }
 
   /** Updates the render state of an Animation block. */

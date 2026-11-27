@@ -11,7 +11,7 @@ const AskSchema = z.object({
   question: z.string().trim().min(1, 'The question is empty.').max(2000, 'Keep questions under 2,000 characters.'),
   surfaceId: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/).optional(),
   history: z.unknown().optional(),
-  engine: z.enum(['opus', 'lfm3']).optional().catch(undefined),
+  engine: z.enum(['opus', 'lfm3', 'bonsai']).optional().catch(undefined),
   attachments: AttachmentListSchema.optional(),
   useLibrary: z.boolean().optional(),
   animate: z.boolean().optional(),

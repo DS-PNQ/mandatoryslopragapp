@@ -13,9 +13,11 @@ The first query tried ("AI research notebook education math study tool") returne
 
 ## Layout
 
-- NotebookLM-style workspace: a 312px **Sources** panel (uploads + the notes library, each with an on/off switch) and the session's questions on the left; the answer thread on the right; the composer docked at the bottom.
+- NotebookLM-style workspace: a 312px **Sources** panel (uploads + the notes library, each with an on/off switch) and the session's questions on the left; the conversation on the right; the composer docked at the bottom.
 - Below 900px the panel becomes an off-canvas drawer opened from a "Sources" button (Escape and the scrim close it).
-- Answers are cards. Inside a card, the answer column (68ch) and the margin (sources, retrieval trace) sit side by side and stack under 860px of card width (container query).
+- The conversation is a chat: one 860px column, the user's question as a teal bubble on the right, Lemma's reply on the left under the droplet avatar. No card around replies and no per-answer margin.
+- A reply's sources fold into one pill under it ("6 sources · note names"); clicking a citation opens it and jumps to the passage. Retrieval statistics are not shown in the chat (the Library page explains retrieval).
+- The notebook is mounted in the root layout, so opening the Library tab and coming back keeps the session, including an answer still streaming. A page reload still starts a new session.
 
 ## Liquid theme
 

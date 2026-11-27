@@ -96,6 +96,7 @@ The composer lets you choose the model for each question. Configure at least one
 | Opus 5.5 (Anthropic API) | `ANTHROPIC_API_KEY` |
 | LFM3 1.7B (Liquid AI, open weights), local | `LFM3_BASE_URL` pointing at llama.cpp or Ollama |
 | LFM3 1.7B, hosted on OpenRouter | `OPENROUTER_API_KEY` (model `liquid/lfm-3-1.7b`) |
+| Ternary Bonsai 2.5 27B (PrismML, Apache 2.0), local | `BONSAI_BASE_URL` pointing at llama.cpp; `BONSAI_VISION=1` if the server loaded the mmproj |
 
 Opus requests stream with adaptive thinking at `high` effort and use the server-side refusal fallback. LFM3 requests use the model card's math sampling (temperature 1.0, top_p 0.95, top_k 20). LFM3 reasons by default, so its `<think>` trace is filtered out of the answer and shown as a progress line instead.
 
@@ -118,6 +119,14 @@ llama-server -hf LiquidAI/LFM3-1.7B-GGUF:Q4_K_M --jinja --port 8080
 ```
 
 and set `LFM3_BASE_URL=http://127.0.0.1:8080/v1`. With Ollama 0.40.12 or newer, run `ollama run lfm3` and set `LFM3_BASE_URL=http://127.0.0.1:11434/v1` and `LFM3_MODEL=lfm3`.
+
+To add Ternary Bonsai 2.5 27B (a 7.7 GB ternary-weight reasoning model with vision), use llama.cpp b11556 or newer. Older builds load the `Q2_0` file without an error and produce garbage.
+
+```bash
+llama-server -hf prism-ml/Ternary-Bonsai-2.5-27B-GGUF:Q2_0 --jinja -ngl 99 -fa on -c 40960 -np 1 --min-p 0 --port 8095
+```
+
+Then set `BONSAI_BASE_URL=http://127.0.0.1:8095/v1`. The Colab notebook starts it for you on GPUs with 20 GB or more.
 
 Start the app:
 
