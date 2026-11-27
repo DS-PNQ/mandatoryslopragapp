@@ -60,7 +60,7 @@ export async function POST(request: Request): Promise<Response> {
           request.signal,
         );
       } catch (error) {
-        console.error('[lemma] answer failed', error);
+        console.error('[lemmaslop] answer failed', error);
         const message =
           error instanceof Error && /LFM3/.test(error.message)
             ? `${error.message.split(':')[0]}. Check that the LFM3 server is running and reachable.`

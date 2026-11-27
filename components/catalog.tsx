@@ -41,7 +41,7 @@ function MathMarkdown({source, inline, className}: {source: string; inline?: boo
   return <Tag className={className} dangerouslySetInnerHTML={{__html: html}} />;
 }
 
-// One chat turn: the question as the user's message, then Lemma's reply with
+// One chat turn: the question as the user's message, then LemmaSlop's reply with
 // its sources folded underneath.
 const Page = createComponentImplementation(PageApi, ({props, buildChild}) => {
   // The writer always puts the question first; the runtime renames child ids,
@@ -268,7 +268,11 @@ const Animation = createComponentImplementation(AnimationApi, ({props}) => {
             <a className="text-button" href={a.src} download={`${sceneName(a.code)}.mp4`}>
               <Download size={16} /> Download MP4
             </a>
-            {a.narration?.length ? (
+            {a.fallback ? (
+              <span className="animation-meta" data-fallback="true">
+                Storyboard of the answer: the model&apos;s own scene did not render
+              </span>
+            ) : a.narration?.length ? (
               <span className="animation-meta">{a.voiced ? 'Narrated by MioTTS-0.6B' : 'Captions only, no voice server'}</span>
             ) : null}
           </div>
@@ -301,7 +305,7 @@ const Animation = createComponentImplementation(AnimationApi, ({props}) => {
           ) : null}
         </div>
       )}
-      <SceneCode code={a.code} open={a.status === 'unavailable'} />
+      {a.code ? <SceneCode code={a.code} open={a.status === 'unavailable'} /> : null}
     </figure>
   );
 });

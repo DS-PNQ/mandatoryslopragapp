@@ -5,7 +5,7 @@
 import {z} from 'zod';
 import {CommonSchemas} from '@a2ui/web_core/v1_0';
 
-export const MATH_CATALOG_ID = 'https://lemma.local/a2ui/catalogs/math/v1/catalog.json';
+export const MATH_CATALOG_ID = 'https://lemmaslop.local/a2ui/catalogs/math/v1/catalog.json';
 
 const Markdown = CommonSchemas.DynamicString.describe(
   'Markdown with inline math in $...$ and display math in $$...$$. Cite passages as [1], [2].',
@@ -178,6 +178,8 @@ export interface AnimationEntry {
   narration?: string[];
   /** True when the narration was voiced by MioTTS; false means captions only. */
   voiced?: boolean;
+  /** The model's own scene did not render, so this is a storyboard of the answer. */
+  fallback?: boolean;
   /** Why rendering failed or is unavailable. */
   message?: string;
   /** Short progress note while rendering, e.g. "Fixing a render error". */
@@ -196,4 +198,8 @@ export interface TraceEntry {
   queryTerms: string[];
   unknownTerms: string[];
   model: string;
+  /** Neural embedding model whose ranking was fused in, if any. */
+  embedder?: string | null;
+  /** Cross-encoder that reordered the candidates, if any. */
+  reranker?: string | null;
 }

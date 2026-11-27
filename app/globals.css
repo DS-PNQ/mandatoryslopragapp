@@ -1,8 +1,8 @@
-/* Lemma, notebook redesign. Palette: cloud gray + ocean teal (light), black + arctic blue (dark).
-   Design system: design-system/lemma/MASTER.md (UI UX Pro Max, "Minimalism &
+/* LemmaSlop, notebook redesign. Palette: cloud gray + ocean teal (light), black + arctic blue (dark).
+   Design system: design-system/lemmaslop/MASTER.md (UI UX Pro Max, "Minimalism &
    Swiss Style"). The palette and other page-level adjustments, such as the
    serif reading face and the darker teal used for text, are recorded in
-   design-system/lemma/pages/notebook.md. */
+   design-system/lemmaslop/pages/notebook.md. */
 
 :root {
   /* Semantic tokens. Light: cloud gray + ocean teal. Dark: black + arctic blue. */
@@ -400,10 +400,6 @@ code {
 }
 .mark-shine {
   stroke: rgba(255, 255, 255, 0.7);
-}
-.mark-qed {
-  fill: var(--color-on-primary);
-  opacity: 0.9;
 }
 
 .masthead-nav {
@@ -2217,7 +2213,7 @@ body {
 /* ---------- Chat ---------- */
 
 /* One readable column, like a conversation: the user's question on the right,
-   Lemma's reply on the left under the droplet mark. */
+   LemmaSlop's reply on the left under the melting-QED mark. */
 .answer {
   width: 100%;
   max-width: var(--chat-width);
@@ -2388,4 +2384,84 @@ body {
   padding: 2px 0;
   min-height: 28px;
   font-size: 12.5px;
+}
+
+/* Answer reading surface (LemmaSlop). The reply used to sit straight on the
+   page, so the drifting liquid shapes showed through behind the text and the
+   serif read gray-on-gray. Per the UI UX Pro Max contrast rules (body text
+   4.5:1 minimum, darkest text on a near-solid surface, 1.5-1.75 line height),
+   the reply now sits on an opaque sheet with near-black ink: in light
+   mode (#0d1117 on #ffffff, 18.9:1), and #f2f5f9 on #11161d in dark mode (16.6:1). */
+:root {
+  --answer-sheet: #ffffff;
+  --answer-ink: #0d1117;
+  --answer-ink-strong: #000000;
+  --answer-edge: color-mix(in srgb, var(--color-primary) 22%, #d8dee5);
+  --answer-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 12px 32px -12px rgba(11, 61, 71, 0.22);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --answer-sheet: #11161d;
+    --answer-ink: #f2f5f9;
+    --answer-ink-strong: #ffffff;
+    --answer-edge: color-mix(in srgb, var(--color-primary) 26%, #232a34);
+    --answer-shadow: 0 1px 0 rgba(199, 235, 255, 0.05) inset, 0 16px 40px -14px rgba(0, 0, 0, 0.85);
+  }
+}
+:root[data-theme='dark'] {
+  --answer-sheet: #11161d;
+  --answer-ink: #f2f5f9;
+  --answer-ink-strong: #ffffff;
+  --answer-edge: color-mix(in srgb, var(--color-primary) 26%, #232a34);
+  --answer-shadow: 0 1px 0 rgba(199, 235, 255, 0.05) inset, 0 16px 40px -14px rgba(0, 0, 0, 0.85);
+}
+
+.reply-body {
+  position: relative;
+  padding: 18px 22px 20px;
+  border-radius: 6px 18px 18px 18px;
+  background: var(--answer-sheet);
+  border: 1px solid var(--answer-edge);
+  box-shadow: var(--answer-shadow);
+  color: var(--answer-ink);
+  font-weight: 430;
+  line-height: 1.66;
+  -webkit-font-smoothing: antialiased;
+}
+.reply-body .prose,
+.reply-body .step,
+.reply-body .statement-body,
+.reply-body .caveat {
+  color: var(--answer-ink);
+}
+.reply-body strong,
+.reply-body b,
+.reply-body .katex {
+  color: var(--answer-ink-strong);
+}
+.reply-body strong,
+.reply-body b {
+  font-weight: 650;
+}
+/* Blocks inside the sheet no longer need their own glass. */
+.reply-body .equation {
+  background: color-mix(in srgb, var(--color-primary) 5%, var(--answer-sheet));
+  border: 1px solid var(--answer-edge);
+}
+.reply-body .caveat {
+  background: color-mix(in srgb, var(--color-accent) 8%, var(--answer-sheet));
+}
+.reply-body .status {
+  color: var(--color-muted-foreground);
+}
+@media (max-width: 640px) {
+  .reply-body {
+    padding: 14px 14px 16px;
+    font-size: 17px;
+  }
+}
+
+/* Storyboard note under a fallback animation */
+.animation-meta[data-fallback='true'] {
+  color: var(--color-accent-text);
 }

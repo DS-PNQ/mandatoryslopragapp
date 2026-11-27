@@ -33,7 +33,7 @@ export async function GET(request: Request, {params}: {params: Promise<{id: stri
     'accept-ranges': 'bytes',
     'cache-control': 'private, max-age=3600',
     'x-content-type-options': 'nosniff',
-    'content-disposition': `inline; filename="lemma-${name.slice(0, 8)}.mp4"`,
+    'content-disposition': `inline; filename="lemmaslop-${name.slice(0, 8)}.mp4"`,
   };
   const range = /^bytes=(\d*)-(\d*)$/.exec(request.headers.get('range') ?? '');
   if (range && (range[1] || range[2])) {

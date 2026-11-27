@@ -15,13 +15,29 @@ The first query tried ("AI research notebook education math study tool") returne
 
 - NotebookLM-style workspace: a 312px **Sources** panel (uploads + the notes library, each with an on/off switch) and the session's questions on the left; the conversation on the right; the composer docked at the bottom.
 - Below 900px the panel becomes an off-canvas drawer opened from a "Sources" button (Escape and the scrim close it).
-- The conversation is a chat: one 860px column, the user's question as a teal bubble on the right, Lemma's reply on the left under the droplet avatar. No card around replies and no per-answer margin.
+- The conversation is a chat: one 860px column, the user's question as a teal bubble on the right, LemmaSlop's reply on the left under the melting-QED avatar, on an opaque answer sheet (see "Answer contrast" below).
 - A reply's sources fold into one pill under it ("6 sources · note names"); clicking a citation opens it and jumps to the passage. Retrieval statistics are not shown in the chat (the Library page explains retrieval).
 - The notebook is mounted in the root layout, so opening the Library tab and coming back keeps the session, including an answer still streaming. A page reload still starts a new session.
 
 ## Liquid theme
 
 From the skill's "Liquid Glass" style (`"liquid glass fluid" --domain style`): translucent, blurred material used sparingly on navigation and controls (top bar, sources panel, pills, starter cards), while answers and the question box stay solid so content reads clearly. Three slowly drifting, blurred liquid shapes sit behind the page in the theme colors. The mark is a droplet holding the end-of-proof square, the send button is a glossy drop, and an animation that is rendering shows a flowing fill. Under `prefers-reduced-transparency` the glass turns solid and the shapes are hidden; under `prefers-reduced-motion` nothing drifts or flows.
+
+## Answer contrast (LemmaSlop update)
+
+Replies used to sit straight on the page, so the drifting liquid shapes showed through behind the serif text and it read gray-on-gray. Following the skill's contrast rules (`"text contrast glass background readability" --domain ux`: darker text on light backgrounds, no gray-on-gray, 4.5:1 minimum; the Glassmorphism row's "Text contrast 4.5:1 checked" requirement), each reply now sits on an opaque sheet with a teal-tinted edge and a soft shadow, and the ink is near-black:
+
+| | Light | Dark |
+|---|---|---|
+| Answer sheet | `#FFFFFF` | `#11161D` |
+| Answer ink | `#0D1117` (18.9:1) | `#F2F5F9` (16.6:1) |
+| Bold and KaTeX | `#000000` | `#FFFFFF` |
+
+Body weight is 430 (Newsreader's variable axis) with line height 1.66. Equations and caveats inside the sheet use tints of the sheet instead of their own glass.
+
+## Logo
+
+The droplet mark was redesigned for the LemmaSlop name with the [logo-design skill](https://github.com/kaankiziltug/logo-design-skill) (installed for this project in `.claude/skills/logo-design/`). Concepts, test sheet and the chosen mark are in `design-system/lemmaslop/logo/`; see the README there.
 
 ## Typography
 

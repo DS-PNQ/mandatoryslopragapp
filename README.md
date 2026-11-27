@@ -1,6 +1,8 @@
-# Lemma
+# LemmaSlop
 
-Lemma is a math notebook. Add your own sources (lecture PDFs, Word documents, text files, photos of a whiteboard or a problem sheet), keep the built-in library of study notes switched on or off, and ask questions in plain words or LaTeX. Answers are typeset like a page from a handbook: numbered display equations, ordered derivation steps, theorem statements, and a citation on every claim that points back to the passage, page or image it came from. Ask it to animate an idea and the model writes a [Manim](https://www.manim.community/) scene that the server renders to a short video, narrated by [MioTTS-0.6B](https://huggingface.co/Aratako/MioTTS-0.6B).
+<img src="design-system/lemmaslop/logo/a-melting-qed-v3.svg" alt="LemmaSlop mark" width="96">
+
+LemmaSlop (formerly Lemma) is a math notebook. Add your own sources (lecture PDFs, Word documents, text files, photos of a whiteboard or a problem sheet), keep the built-in library of study notes switched on or off, and ask questions in plain words or LaTeX. Answers are typeset like a page from a handbook: numbered display equations, ordered derivation steps, theorem statements, and a citation on every claim that points back to the passage, page or image it came from. Ask it to animate an idea and the model writes a [Manim](https://www.manim.community/) scene that the server renders to a short video, narrated by [MioTTS-0.6B](https://huggingface.co/Aratako/MioTTS-0.6B); if the scene cannot be made to render, a storyboard of the answer is rendered instead, so an animation request always ends in a video.
 
 It combines two things:
 
@@ -37,7 +39,17 @@ Pages are rendered at 1600 px on the long side with `@napi-rs/canvas`, and sent 
 
 ## Animations with Manim
 
-When a question asks to animate, visualize or illustrate something, when the composer's **Animate** switch is on, or when you click **Animate this with Manim** under an answer, the model adds one `anim` block with a Manim Community scene. The server renders it with `scripts/manim_runner.py` while the rest of the answer streams, and the answer shows a video with the scene code under it. If the render fails, the error goes back to the model once for a fix, and the fixed scene is rendered again.
+An animation is made when the question asks to animate, visualize or illustrate something (or to show something moving or changing), when the composer's **Animate** switch is on, or when you click **Animate this with Manim** under an answer. The server detects the request itself, so it no longer depends on the model choosing to animate.
+
+Making the video is a pipeline built so that every request ends in one:
+
+1. **The answer first.** The model writes the explanation, told to put the key formula in an equation block and the reasoning in short steps, and writes no code.
+2. **A separate scene call.** The same model then gets the question and its own answer and writes one scene as plain Python in a fenced block, after a title and numbered narration lines, following a worked example. Code no longer travels as an escaped JSON string, which small models often broke. Open models run this call with reasoning off (`chat_template_kwargs.enable_thinking = false`) and temperature 0.6.
+3. **Voice once.** The narration is voiced with MioTTS once and reused by every render attempt.
+4. **Render, repair twice.** If the render fails or times out, the error and traceback go back to the model for a fix, up to `LEMMA_MANIM_REPAIRS` (default 2) times.
+5. **Storyboard fallback.** If it still fails, the server renders a storyboard generated from the answer with fixed templates: the title, the key formulas boxed, and each step as a caption, narrated beat by beat. It renders whenever Manim does, and the player says it is a storyboard.
+
+The runner also forgives the mistakes that most often broke scenes: API names from older Manim versions (`ShowCreation`, `TextMobject`, `FadeInFromDown`, …) are aliased; `MathTex`/`Tex` fall back to Unicode text when LaTeX is not installed or a formula does not compile; `narrate()` with a wrong or repeated index takes the next unspoken line instead of raising; and narration lines the scene never called are still spoken after the last one.
 
 Rendering is on when the server can import Manim: set `MANIM_PYTHON` to a Python that has it (default `python3`), or `LEMMA_MANIM=off` to turn it off. Without Manim (on Vercel, for example) the answer shows the scene code and the command to render it locally. With no LaTeX install the model is told to label with `Text` instead of `MathTex`.
 
@@ -77,15 +89,41 @@ uv run python scripts/generate_preset.py --audio your-voice.wav --preset-id en_f
 uv run python run_server.py --llm-base-url http://127.0.0.1:8000/v1 --llm-model MioTTS --codec-model Aratako/MioCodec-25Hz-24kHz --presets-dir presets-24k --port 8001
 ```
 
-Then set `MIOTTS_URL=http://127.0.0.1:8001` (and `MIOTTS_PRESET` if the preset has another id). The 0.6B model card names the 24 kHz codec, while the inference server defaults to its 44.1 kHz codec and ships presets encoded for that one, which is why the commands above build a preset with the 24 kHz codec. `MIOTTS_REFERENCE` can point at a short clip to clone instead of a preset. The Colab notebook does all of this on the GPU (section 6c). Note that the server's bundled presets and the model card's sample voices were generated with T5Gemma-TTS and gemini-2.5-pro-tts, which the inference repo says rules out commercial use of audio made with them; use a reference clip you have rights to for anything commercial.
+Then set `MIOTTS_URL=http://127.0.0.1:8001` (and `MIOTTS_PRESET` if the preset has another id). The 0.6B model card names the 24 kHz codec, while the inference server defaults to its 44.1 kHz codec and ships presets encoded for that one, which is why the commands above build a preset with the 24 kHz codec. `MIOTTS_REFERENCE` can point at a short clip to clone instead of a preset. The Colab notebook does all of this on the GPU (section 5). Note that the server's bundled presets and the model card's sample voices were generated with T5Gemma-TTS and gemini-2.5-pro-tts, which the inference repo says rules out commercial use of audio made with them; use a reference clip you have rights to for anything commercial.
 
 ## How a question is answered
 
 1. **Embed.** The question is tokenized (LaTeX commands kept as words, so `\nabla` matches "nabla") and folded into the LSA space built from the notes: TF-IDF, then a truncated SVD to 64 dimensions.
 2. **Probe.** The nearest 8 of 32 e-means cells are scanned and the passages in them ranked by cosine similarity. The page reports how many passages were scanned and the recall against an exhaustive scan.
-3. **Fuse.** BM25 ranks all passages lexically. Reciprocal rank fusion (k = 60) combines the two lists, and the top 6 passages go to the model.
-4. **Write.** The model writes JSON Lines in a small block vocabulary (paragraph, equation, steps, statement, caveat, animation, follow-ups). The server validates each line and translates it into A2UI components, so the model can never place a component outside the catalog or inject HTML.
-5. **Render.** The browser's A2UI `MessageProcessor` applies the messages as they arrive. Markdown is escaped before parsing, links are dropped, and KaTeX runs with `trust: false`.
+3. **Fuse.** BM25 ranks all passages lexically. With an embedding server configured, a neural dense ranking is added as a third list (see below). Reciprocal rank fusion (k = 60) combines the lists.
+4. **Rerank.** With a reranker configured, the 20 best fused passages are scored by a cross-encoder that reads the question and each passage together, and the top 6 go to the model. Without one, the top 6 fused passages do.
+5. **Write.** The model writes JSON Lines in a small block vocabulary (paragraph, equation, steps, statement, caveat, animation, follow-ups). The server validates each line and translates it into A2UI components, so the model can never place a component outside the catalog or inject HTML.
+6. **Render.** The browser's A2UI `MessageProcessor` applies the messages as they arrive. Markdown is escaped before parsing, links are dropped, and KaTeX runs with `trust: false`.
+
+## Neural retrieval (optional)
+
+The built-in index needs no server and runs anywhere, Vercel included. Two optional llama-server endpoints improve on it, following what recent retrieval studies find strongest for the cost: hybrid lexical + dense retrieval fused with RRF, then a cross-encoder rerank of the fused candidates (e.g. [arXiv:2604.01733](https://arxiv.org/abs/2604.01733), where adding a reranker gave the largest single gain).
+
+| Stage | Model | Configure |
+|---|---|---|
+| Dense embeddings | [Qwen3-Embedding-0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF) (Apache 2.0) | `LEMMA_EMBED_URL` |
+| Reranker | [Qwen3-Reranker-0.6B](https://huggingface.co/ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF) (Apache 2.0) | `LEMMA_RERANK_URL` |
+
+```bash
+llama-server -hf Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0 --embedding --pooling last -c 8192 -b 8192 -ub 8192 --port 8097
+```
+
+```bash
+llama-server -hf ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF --reranking -c 8192 -b 4096 -ub 4096 --port 8098
+```
+
+Then set `LEMMA_EMBED_URL=http://127.0.0.1:8097/v1` and `LEMMA_RERANK_URL=http://127.0.0.1:8098/v1`. Choices in `lib/rag/neural.ts` and `lib/rag/hybrid.ts`:
+
+- **Instructions on queries only.** Qwen3-Embedding is instruction-aware; its model card reports 1–5% lower retrieval without a query instruction. Passages are embedded without one.
+- **Context headers.** Each passage is embedded with its note and section ("Infinite series § Ratio test") or its file and page, the cheap form of contextual retrieval: a chunk that says "the series converges" is embedded knowing which series.
+- **LaTeX verbalised for the embedder.** `\sum` becomes "sum" and `x^2` "x squared", since embedding natural-language statements of theorems beats embedding raw LaTeX ([arXiv:2602.05216](https://arxiv.org/abs/2602.05216)). The answer model still reads the original text.
+- **Uploads too.** Large uploads (over about 14,000 characters) are ranked by BM25 and embeddings fused with RRF, then reranked. Vectors are cached by content hash, so each passage is embedded once per server process; the library is embedded once, on the first question.
+- **Never blocking.** Every call has a timeout; a failing endpoint is skipped for a minute and retrieval falls back to the built-in index.
 
 ## The e-means implementation
 
@@ -109,7 +147,7 @@ The composer lets you choose the model for each question. Configure at least one
 | Opus 5.5 (Anthropic API) | `ANTHROPIC_API_KEY` |
 | LFM3 1.7B (Liquid AI, open weights), local | `LFM3_BASE_URL` pointing at llama.cpp or Ollama |
 | LFM3 1.7B, hosted on OpenRouter | `OPENROUTER_API_KEY` (model `liquid/lfm-3-1.7b`) |
-| Ternary Bonsai 2.5 27B (PrismML, Apache 2.0), local | `BONSAI_BASE_URL` pointing at llama.cpp; `BONSAI_VISION=1` if the server loaded the mmproj |
+| Ternary Bonsai 2.5 27B (PrismML, Apache 2.0), local | `BONSAI_BASE_URL` pointing at llama.cpp; `BONSAI_VISION=1` if the server loaded the mmproj. Faster with MTP speculative decoding (below) |
 
 Opus requests stream with adaptive thinking at `high` effort and use the server-side refusal fallback. LFM3 requests use the model card's math sampling (temperature 1.0, top_p 0.95, top_k 20). LFM3 reasons by default, so its `<think>` trace is filtered out of the answer and shown as a progress line instead.
 
@@ -139,7 +177,23 @@ To add Ternary Bonsai 2.5 27B (a 7.7 GB ternary-weight reasoning model with visi
 llama-server -hf prism-ml/Ternary-Bonsai-2.5-27B-GGUF:Q2_0 --jinja -ngl 99 -fa on -c 40960 -np 1 --min-p 0 --port 8095
 ```
 
-Then set `BONSAI_BASE_URL=http://127.0.0.1:8095/v1`. The Colab notebook starts it for you on GPUs with 20 GB or more.
+Then set `BONSAI_BASE_URL=http://127.0.0.1:8095/v1`. The Colab notebook starts it for you.
+
+### Speculative decoding for Bonsai
+
+Bonsai 2.5's `-mtp.gguf` files carry a multi-token-prediction (MTP) draft head trained by PrismML: one extra layer that guesses the next few tokens from the model's hidden state, which the 27B model then verifies in a single pass, keeping only the tokens it would have produced. That makes it the best drafter for this model:
+
+- **Same output.** PrismML measures a mean KL divergence of 5.2×10⁻⁵ between drafting on and off, no higher than a control that accepts every guess.
+- **Faster decoding, where LemmaSlop spends its time.** 1.5–1.8× on NVIDIA GPUs at 3 drafts and minimum probability 0.1 (A100: 105 → 171 tok/s; RTX 4090: 111 → 204 tok/s, PrismML's measurements). Prefill is 9–23% slower because the head makes its own pass over the prompt, but answers here include hundreds of reasoning tokens, so decoding dominates.
+- **No second model.** The head adds 0.2 GB, and the `PTQ1_0-mtp` file (6.2 GB) is smaller than stock `Q2_0` (7.7 GB). A separate draft model would need Bonsai's tokenizer and VRAM a T4 does not have, and PrismML has released no separate drafter for 2.5.
+
+It needs PrismML's llama.cpp build ([releases](https://github.com/PrismML-Eng/llama.cpp/releases); the Colab notebook pins `prism-b12178-03ec600`, whose CUDA 12.4 Linux build carries sm_70/sm_80 code for T4, L4 and A100):
+
+```bash
+llama-server -m Ternary-Bonsai-2.5-27B-PTQ1_0-mtp.gguf --mmproj Ternary-Bonsai-2.5-27B-mmproj-Q8_0.gguf --jinja -ngl 99 -fa on -c 40960 -np 1 --temp 1.0 --top-p 0.95 --top-k 20 --min-p 0 --spec-type draft-mtp --spec-draft-n-min 0 --spec-draft-n-max 3 --spec-draft-p-min 0.1 --port 8095
+```
+
+Check that drafting is active in any response's `timings` (`draft_n`, `draft_n_accepted`). Prompt n-gram drafting (`--spec-type draft-mtp,ngram-mod`) can be added on top; it only drafts when the output repeats the context, such as a scene repair re-emitting code, and is experimental here. Stock llama.cpp with the `Q2_0` file has no MTP support; there the notebook tries `ngram-mod` and keeps it only if the server starts and answers correctly.
 
 Start the app:
 
@@ -159,17 +213,20 @@ It opens on http://localhost:3000. `npm run dev` and `npm run build` rebuild the
 
 The first run takes about 10–15 minutes, mostly compiling llama.cpp. The compiled binary is saved to `/kaggle/working/bin/llama-server`. Publish it as a dataset and attach that dataset, and later runs skip the build. Optional Kaggle secrets: `GITHUB_TOKEN` (private repository), `HF_TOKEN`, and `ANTHROPIC_API_KEY` (also enables Opus).
 
-## Run it on Google Colab (one GPU, LFM3 local)
+## Run it on Google Colab (one GPU, everything local)
 
-`colab/lemma-lfm3-colab.ipynb` does the same on a Colab GPU runtime: the free T4, or an L4 or A100. It installs a prebuilt CUDA llama.cpp and serves LFM3 1.7B on it. LFM3 is the app's only model in this notebook: hosted-model keys are removed from the app's environment, so every answer is generated on the runtime's GPU. You open the app through Colab's private port proxy, or through an optional public Cloudflare tunnel link.
+`colab/lemmaslop-colab.ipynb` runs the whole app on a Colab GPU runtime (the free T4, or an L4 or A100), with no API key. Hosted-model keys are removed from the app's environment, so every answer is generated on the runtime's GPU.
 
-1. In Colab, go to **File → Open notebook → GitHub**, paste `https://github.com/DS-PNQ/mandatoryslopragapp`, and pick `colab/lemma-lfm3-colab.ipynb`. You can also use **File → Upload notebook**.
+- **Ternary Bonsai 2.5 27B** answers, on PrismML's llama.cpp build with **MTP speculative decoding** (section 6). The notebook smoke-tests each step and reports decode speed and draft acceptance; if the PrismML build fails it retries without drafting, then falls back to stock llama.cpp with `Q2_0`.
+- **Qwen3-Embedding-0.6B and Qwen3-Reranker-0.6B** serve neural retrieval (section 7), on the GPU when there is room after Bonsai; otherwise the embedder runs on the CPU and the reranker is skipped.
+- **Manim with TeX Live** and **MioTTS-0.6B** make narrated videos (section 5); `ask()` in section 9 plays them inline.
+- LFM3 1.7B is optional (`INSTALL_LFM3 = True`).
+
+1. In Colab, go to **File → Open notebook → GitHub**, paste `https://github.com/DS-PNQ/mandatoryslopragapp`, and pick `colab/lemmaslop-colab.ipynb`. You can also use **File → Upload notebook**.
 2. Go to **Runtime → Change runtime type** and pick **T4 GPU** (or another GPU).
-3. Choose **Runtime → Run all**. Section 9 prints the links.
+3. Choose **Runtime → Run all**. Section 10 prints the links: Colab's private port proxy and an optional public Cloudflare tunnel.
 
-Section 6b installs Manim (about 2 minutes) so animation answers render on the runtime, and section 6c serves MioTTS-0.6B on the GPU for the narration (3 to 5 minutes the first time). Set `INSTALL_MANIM = False` or `INSTALL_TTS = False` in the settings cell to skip either.
-
-Nothing is compiled by default. llama.cpp comes from conda-forge's CUDA 12 build, which has native code for the T4, L4, A100 and H100 and takes about 2 minutes to install, while the app's `npm ci` and `next build` run in the background. The official llama.cpp Linux binaries are not used because they need glibc 2.38 and Colab runs Ubuntu 22.04. If the prebuilt install fails, or with `LLAMA_INSTALL = "source"`, the notebook compiles llama.cpp for the GPU instead (about 20–25 minutes on the free tier's 2 CPUs) and, with `CACHE_TO_DRIVE = True`, saves it to `MyDrive/lemma-cache` so later sessions reuse it. An optional `HF_TOKEN` Colab secret speeds up the model download.
+The first run takes about 15 minutes on a T4, most of it downloads. Stock llama.cpp comes from conda-forge's CUDA 12 build (native code for T4, L4, A100 and H100); its environment also supplies the CUDA 12 runtime libraries the PrismML build links against. With `LLAMA_INSTALL = "source"`, or if conda fails, llama.cpp is compiled for the GPU instead (20–25 minutes) and, with `CACHE_TO_DRIVE = True`, cached in `MyDrive/lemmaslop-cache`.
 
 ## Tests
 
@@ -177,7 +234,7 @@ Nothing is compiled by default. llama.cpp comes from conda-forge's CUDA 12 build
 npm test
 ```
 
-The tests run the Opus and LFM3 paths against local mock servers (no keys or network), and check that every message the agent emits passes the A2UI `MessageProcessor`'s validation for the catalog. They also cover the reasoning-trace filter, the markdown sanitizer, PDF/Word/image parsing, upload retrieval, the Manim scene validator (which needs only `python3`), and the MioTTS client against a mock of its API. The render test runs when `MANIM_PYTHON` points at a Python with Manim installed.
+The tests run the Opus and LFM3 paths against local mock servers (no keys or network), and check that every message the agent emits passes the A2UI `MessageProcessor`'s validation for the catalog. They also cover the reasoning-trace filter, the markdown sanitizer, PDF/Word/image parsing, upload retrieval, the Manim scene validator (which needs only `python3`), the MioTTS client against a mock of its API, the neural retrieval stages against mock embedding and rerank endpoints (including a dead endpoint), and the animation pipeline end to end against a mock Bonsai server (scene call with reasoning off, two repairs, storyboard fallback). The render tests run when `MANIM_PYTHON` points at a Python with Manim installed; they render the storyboard, the prompt's example scene, and a scene that uses old Manim names and a bad `narrate()` index.
 
 ## Deploy on Vercel
 
@@ -191,15 +248,22 @@ Each file in `content/notes/` is one note with frontmatter (`id`, `title`, `area
 
 ## Design
 
-The interface was redesigned with the [UI UX Pro Max](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) skill, installed for this project only in `.claude/skills/ui-ux-pro-max/` (Claude Code picks it up when working in this repository). Its design system for Lemma is in `design-system/lemma/`: `MASTER.md` and `tokens.css` as generated (Swiss-minimal layout, Inter), and `pages/notebook.md` for the page-level choices: a liquid theme (glass on the top bar, sources panel and pills, drifting liquid shapes behind the page, a droplet mark), Instrument Serif for names and titles, and the palette, cloud gray and ocean teal in light mode, black and arctic blue in dark mode. Light and dark themes follow the system setting, and the sun/moon button in the top bar overrides it.
+Answers sit on an opaque reading sheet with near-black ink (18.9:1 contrast in light mode, 16.6:1 in dark), so the text stands clear of the liquid background; the reasoning is in `design-system/lemmaslop/pages/notebook.md`. The mark, a melting end-of-proof square, was designed with the [logo-design skill](https://github.com/kaankiziltug/logo-design-skill), installed for this project only in `.claude/skills/logo-design/`; concepts and tests are in `design-system/lemmaslop/logo/`.
+
+The interface was redesigned with the [UI UX Pro Max](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) skill, installed for this project only in `.claude/skills/ui-ux-pro-max/` (Claude Code picks it up when working in this repository). Its design system is in `design-system/lemmaslop/`: `MASTER.md` and `tokens.css` as generated (Swiss-minimal layout, Inter), and `pages/notebook.md` for the page-level choices: a liquid theme (glass on the top bar, sources panel and pills, drifting liquid shapes behind the page), Instrument Serif for names and titles, and the palette, cloud gray and ocean teal in light mode, black and arctic blue in dark mode. Light and dark themes follow the system setting, and the sun/moon button in the top bar overrides it.
+
+## License
+
+LemmaSlop is released under the [MIT License](LICENSE). The project-scoped skills in `.claude/skills/` keep their own licenses (UI UX Pro Max and logo-design are both MIT). Model weights are downloaded at run time under their own licenses (Ternary Bonsai, the Qwen3 embedding and reranker, and MioTTS are Apache 2.0; LFM3 has Liquid AI's license), and the default MioTTS reference voice has the use restrictions described above.
 
 ## Layout
 
 ```
 content/notes/              the library (21 notes, 110 passages)
-lib/rag/                    tokenizer, LSA, e-means, IVF + BM25 retrieval
+lib/rag/                    tokenizer, LSA, e-means, IVF + BM25, neural embeddings + reranker
 lib/uploads/                file parsing (PDF, Word, text, images), scanned-PDF transcription and upload retrieval
 lib/manim/render.ts         Manim render service (sandbox, queue, cleanup)
+lib/manim/storyboard.ts     storyboard scene built from an answer (the animation fallback)
 lib/tts/miotts.ts           MioTTS-0.6B narration client
 scripts/manim_runner.py     validates and renders one scene
 lib/a2ui/catalog-api.ts     the math component catalog (Zod schemas)
@@ -210,6 +274,7 @@ components/SourcesPanel.tsx the sources list
 app/api/                    ask, upload, and animation video routes
 app/library/                index report and e-means training curves
 scripts/build-index.ts      builds generated/index.json
-design-system/lemma/        UI UX Pro Max design system and page overrides
-.claude/skills/ui-ux-pro-max/  the design skill, project-scoped
+design-system/lemmaslop/    UI UX Pro Max design system, page overrides, and logo/
+.claude/skills/             ui-ux-pro-max and logo-design, project-scoped
+colab/lemmaslop-colab.ipynb Colab notebook (Bonsai + MTP, neural retrieval, Manim, MioTTS)
 ```

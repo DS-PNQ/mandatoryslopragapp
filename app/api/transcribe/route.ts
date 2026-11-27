@@ -37,7 +37,7 @@ export async function POST(request: Request): Promise<Response> {
       try {
         for await (const event of transcribePdf(bytes, config, request.signal)) send(event);
       } catch (error) {
-        console.error('[lemma] transcription failed', error);
+        console.error('[lemmaslop] transcription failed', error);
         send({type: 'error', message: error instanceof Error ? error.message : 'The transcription failed.'});
       } finally {
         controller.close();

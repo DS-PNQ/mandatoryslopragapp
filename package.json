@@ -1,7 +1,8 @@
 {
-  "name": "lemma",
+  "name": "lemmaslop",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "index": "tsx scripts/build-index.ts",

@@ -80,3 +80,83 @@ test('narrate() adds the voice, extends the video and writes captions', {skip: !
   const vtt = readFileSync(path.join(dir, 'captions.vtt'), 'utf8');
   assert.match(vtt, /00:00:00\.000 --> 00:00:02\.000\nA circle appears\./);
 });
+
+// --- Scene writing, fallbacks and runner leniency ---------------------------
+
+import {parseSceneReply, sceneExample, wantsAnimation} from '../lib/agent/answer';
+import {storyboardFromBlocks, storyboardScene, texToUnicode} from '../lib/manim/storyboard';
+
+function renderIn(code: string, narration: string[] = []): {ok: boolean; error?: string; stage?: string; captions?: boolean; dir: string} {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'lemmaslop-scene-'));
+  writeFileSync(path.join(dir, 'scene.py'), code);
+  if (narration.length) writeFileSync(path.join(dir, 'narration.json'), JSON.stringify(narration.map((text) => ({text, duration: 1, file: null}))));
+  const r = spawnSync(PY, ['-I', 'scripts/manim_runner.py', path.join(dir, 'scene.py'), dir, 'l'], {encoding: 'utf8', timeout: 240_000});
+  return {...JSON.parse(r.stdout.trim().split('\n').at(-1) ?? '{}'), dir};
+}
+
+test('the scene-writer reply format parses into title, narration and code', () => {
+  for (const latex of [true, false]) {
+    const draft = parseSceneReply(`<think>plan</think>${sceneExample(latex)}`);
+    assert.ok(draft);
+    assert.equal(draft.title, 'Partial sums of a geometric series');
+    assert.equal(draft.narration.length, 3);
+    assert.match(draft.code, /^from manim import \*/);
+    assert.match(draft.code, /class GeometricSums\(Scene\)/);
+  }
+  assert.equal(parseSceneReply('I cannot help with that.'), null);
+});
+
+test('animation requests are recognised from the question', () => {
+  assert.ok(wantsAnimation('Animate the ratio test'));
+  assert.ok(wantsAnimation('Can you visualize eigenvectors?'));
+  assert.ok(wantsAnimation('Show how the tangent line changes as x moves'));
+  assert.ok(!wantsAnimation('What is the ratio test?'));
+  assert.ok(!wantsAnimation('Show that the series converges'));
+});
+
+const BLOCKS: any[] = [
+  {t: 'p', md: 'The series converges for $|r|<1$ to $\\frac{1}{1-r}$ [1].'},
+  {t: 'eq', tex: '\\sum_{n=0}^{\\infty} r^n = \\frac{1}{1-r}'},
+  {t: 'steps', items: [{md: 'Multiply $S_N$ by $r$.'}, {md: 'Subtract.', tex: '(1-r)S_N = 1 - r^{N+1}'}]},
+  {t: 'eq', tex: '\\input{/etc/passwd}'},
+];
+
+test('storyboards are built from the answer and drop refused TeX', () => {
+  const board = storyboardFromBlocks('Animate the geometric series', BLOCKS);
+  assert.equal(board.beats.length, board.narration.length);
+  assert.ok(board.beats.length >= 3);
+  assert.ok(!storyboardScene(board).includes('\\\\input'));
+  assert.equal(texToUnicode('\\frac{1}{1-r}'), '1/(1-r)');
+  assert.equal(texToUnicode('x^2 + \\alpha_i'), 'x² + αᵢ');
+});
+
+test('the storyboard scene passes the validator', {skip: !hasPython}, () => {
+  // Rendering needs Manim; without it the runner still validates first, so a
+  // missing manim import is the only acceptable failure.
+  const r = renderIn(storyboardScene(storyboardFromBlocks('Animate the geometric series', BLOCKS)));
+  assert.notEqual(r.stage, 'validate', r.error);
+});
+
+test('the storyboard and the prompt example render', {skip: !hasManim && 'Manim is not installed (set MANIM_PYTHON)'}, () => {
+  const board = storyboardFromBlocks('Animate the geometric series', BLOCKS);
+  const a = renderIn(storyboardScene(board), board.narration);
+  assert.equal(a.ok, true, a.error);
+  assert.equal(a.captions, true);
+  const draft = parseSceneReply(sceneExample(false))!;
+  const b = renderIn(draft.code, draft.narration);
+  assert.equal(b.ok, true, b.error);
+});
+
+test('old Manim names, MathTex without LaTeX and a bad narrate index still render', {skip: !hasManim && 'Manim is not installed (set MANIM_PYTHON)'}, () => {
+  const r = renderIn(
+    head +
+      '        t = TextMobject("Old API")\n        f = MathTex(r"\\frac{a}{b}")\n' +
+      '        self.play(ShowCreation(Circle()), FadeInFromDown(t))\n        self.play(Write(f))\n' +
+      '        narrate(self, 7)\n        self.wait(0.2)\n',
+    ['first line', 'second line, never called'],
+  );
+  assert.equal(r.ok, true, r.error);
+  const vtt = readFileSync(path.join(r.dir, 'captions.vtt'), 'utf8');
+  assert.match(vtt, /first line/);
+  assert.match(vtt, /second line, never called/);
+});

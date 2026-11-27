@@ -18,7 +18,7 @@ import 'katex/dist/katex.min.css';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Lemma, a math notebook',
+  title: 'LemmaSlop, a math notebook',
   description:
     'Ask questions of your own PDFs, Word files and images, or a library of math notes, and get sourced, typeset answers with Manim animations.',
 };
@@ -50,9 +50,9 @@ export default async function RootLayout({children}: {children: React.ReactNode}
           Skip to content
         </a>
         <header className="topbar">
-          <Link href="/" className="wordmark" aria-label="Lemma, home">
+          <Link href="/" className="wordmark" aria-label="LemmaSlop, home">
             <Mark />
-            <span>Lemma</span>
+            <span>LemmaSlop</span>
           </Link>
           <NavLinks />
           <div className="topbar-end">

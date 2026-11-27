@@ -1,10 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type {AnimationEntry, SourceEntry, TraceEntry} from '../a2ui/catalog-api';
 import {extractCode, getManimStatus, renderScene, type ManimStatus, type RenderResult} from '../manim/render';
-import {getRetriever, getIndex} from '../rag/load';
+import {storyboardFromBlocks, storyboardScene} from '../manim/storyboard';
+import {searchLibrary, searchUploads, type NeuralTrace} from '../rag/hybrid';
+import {getIndex} from '../rag/load';
 import {estimateSeconds, speakable, synthesize, ttsAvailable, type VoiceLine} from '../tts/miotts';
 import type {RetrievedPassage} from '../rag/retrieve';
-import {rankUploads, type Attachment, type RankedUploadChunk} from '../uploads/retrieve';
+import type {Attachment, RankedUploadChunk} from '../uploads/retrieve';
 import {BlockStreamParser, blocksToTranscript, type Block} from './blocks';
 import {BONSAI_MODEL, LFM3_MODEL, bonsaiConfig, bonsaiSpec, bonsaiVision, lfm3Config, lfm3Spec, streamLfm3, type ChatMessage, type ChatPart, type LocalModelSpec} from './lfm3';
 import {SurfaceWriter, type A2uiMessage} from './surface-writer';
@@ -80,7 +82,6 @@ Output format: JSON Lines only. Every line is one complete JSON object, with no 
 {"t":"steps","title":"optional short title","items":[{"md":"what this step does","tex":"optional display LaTeX"}]}
 {"t":"stmt","kind":"Theorem|Definition|Lemma|Corollary|Proposition|Example|Remark","title":"optional name","md":"the statement","cite":1}
 {"t":"caveat","md":"what the sources do not cover, or an assumption you had to make"}
-{"t":"anim","title":"short caption","code":"Manim scene source, see below"}
 {"t":"followups","items":["two or three short follow-up questions the sources can answer"]}
 
 Start with a p block that answers the question directly in one or two sentences. Use steps only for a genuine sequence of reasoning. End with exactly one followups line.`;
@@ -91,21 +92,24 @@ function animationRules(latex: boolean): string {
     : 'Text only. LaTeX is not installed, so do not use MathTex, Tex, DecimalNumber, Integer, Variable, include_numbers, add_coordinates, get_axis_labels or brace.get_tex; label everything with Text';
   return `- The code starts with "from manim import *" (you may also "import numpy as np" and "import math") and defines exactly one class that extends Scene (or MovingCameraScene or ThreeDScene) with a construct method. Use the Manim Community Edition API.
 - 6 to 20 seconds in total. The frame is 16:9, about 14 by 8 units: keep everything inside it, use font_size 28 or more, and fade out or move old objects before adding new ones so nothing overlaps.
+- Keep it simple and certain to run: a few objects, standard constructors with keyword arguments, no custom classes besides the scene, no updaters that create objects every frame.
 - Build from shapes, NumberPlane, Axes with axes.plot, ParametricFunction, Dot, Line, Arrow, Brace, ValueTracker with always_redraw, and ${text}.
 - No files, network or system access: never use open, os, sys, config, SVGMobject, ImageMobject, Code, add_sound, or any name that starts with an underscore.
 - Narration: give the anim block a "narration" list of 2 to 6 short spoken sentences, one per step of the scene, each under 200 characters, in plain words with no LaTeX or symbols (say "x squared", "the sum from n equals zero to infinity"). In construct, call narrate(self, i) at the moment sentence i should be heard. It starts the voice and returns the sentence's length in seconds, so time the animations under it to that length: "d = narrate(self, 0)" then "self.play(Create(axes), run_time=d)", or several shorter plays followed by self.wait for the rest. Call each sentence once, in order; narrate is already defined, do not import or define it.`;
 }
 
-function systemPrompt(manim: ManimStatus): string {
-  // Without a renderer the code is still shown to the user to run themselves.
-  const latex = manim.available ? manim.latex : true;
-  return `${BASE_PROMPT}
+function systemPrompt(animate: boolean): string {
+  return animate
+    ? `${BASE_PROMPT}
 
-Animations. The anim block is a Manim scene that the server renders to a short video for the user.
-- Write one anim block only when the user asks you to animate, visualize, illustrate, or show something changing, or when the question ends with <animate/>. Never write more than one. Otherwise do not write anim blocks.
-- Place it after the text it illustrates and before followups. The scene should show the idea of the answer step by step, not decorate it.
-${animationRules(latex)}
-- Escape the code as a JSON string: newlines as \\n, double quotes as \\", backslashes doubled.`;
+The user asked for an animation. A separate step turns your answer into a narrated Manim video, so do not write any code. Make the answer easy to animate: put the key formula in an eq block and the reasoning in one steps block of three to five short steps.`
+    : BASE_PROMPT;
+}
+
+/** The question asks for a picture in motion. */
+export function wantsAnimation(question: string): boolean {
+  return /\b(animat\w*|visuali[sz]\w*|illustrat\w*|manim)\b/i.test(question) ||
+    /\bshow\b[^.?!]*\b(chang|mov|grow|evolv|rotat|transform|travel|trac)\w*/i.test(question);
 }
 
 // Small models follow a format more reliably from one concrete example.
@@ -226,17 +230,24 @@ export async function answer(input: AskInput, send: (e: StreamEvent) => void, si
   const previous = input.history?.at(-1)?.question;
   const followUpAnimation = input.question === ANIMATE_FOLLOWUP && Boolean(previous);
   const query = followUpAnimation ? previous! : input.question;
-  const animate = Boolean(input.animate) || followUpAnimation;
+  const animate = Boolean(input.animate) || followUpAnimation || wantsAnimation(input.question);
 
-  // Retrieval: uploads first (they are what the user is asking about), then the library.
-  const uploadChunks = rankUploads(query, attachments, 6);
+  // Retrieval: uploads first (they are what the user is asking about), then the
+  // library. Both run hybrid search, with neural stages when servers are set.
+  const [uploadResult, libraryResult] = await Promise.all([
+    attachments.length ? searchUploads(query, attachments, 6, signal) : null,
+    useLibrary ? searchLibrary(query, attachments.length > 0 ? 3 : 6, signal) : null,
+  ]);
+  const uploadChunks = uploadResult?.chunks ?? [];
   const sources: PromptSource[] = uploadChunks.map((c, i) => uploadEntry(c, i + 1));
+  const neural: NeuralTrace = {
+    embedder: libraryResult?.neural.embedder ?? uploadResult?.neural.embedder ?? null,
+    reranker: libraryResult?.neural.reranker ?? uploadResult?.neural.reranker ?? null,
+  };
   let traceEntry: TraceEntry | null = null;
-  if (useLibrary) {
-    const retriever = getRetriever();
+  if (libraryResult) {
     const {ivf} = getIndex();
-    const k = attachments.length > 0 ? 3 : 6;
-    const {passages, trace} = retriever.search(query, k);
+    const {passages, trace} = libraryResult;
     passages.forEach((p) => sources.push(libraryEntry(p, sources.length + 1)));
     traceEntry = {
       cells: trace.probed,
@@ -248,6 +259,8 @@ export async function answer(input: AskInput, send: (e: StreamEvent) => void, si
       queryTerms: trace.queryTerms,
       unknownTerms: trace.unknownTerms,
       model: engine ? engine.model : 'none (retrieval only)',
+      embedder: neural.embedder,
+      reranker: neural.reranker,
     };
   }
   const visuals = attachments.filter((a) => a.media);
@@ -310,30 +323,36 @@ export async function answer(input: AskInput, send: (e: StreamEvent) => void, si
   const blocks: Block[] = [];
   const renders: Promise<void>[] = [];
   let animated = false;
+  // When an animation is coming, follow-ups wait so the video sits above them.
+  let heldFollowups: Block | null = null;
   const parser = new BlockStreamParser(
-    (line, reason) => console.warn(`[lemma] dropped line (${reason}): ${line.slice(0, 120)}`),
+    (line, reason) => console.warn(`[lemmaslop] dropped line (${reason}): ${line.slice(0, 120)}`),
     engine.id !== 'opus',
   );
 
-  const startAnimation = (b: Extract<Block, {t: 'anim'}>) => {
-    const initial: AnimationEntry = manim.available
-      ? {status: 'rendering', code: b.code, note: 'Rendering with Manim'}
-      : {status: 'unavailable', code: b.code, message: manim.reason};
-    const id = writer.block(b, initial);
-    if (manim.available) renders.push(renderAnimation(id, b, engine, manim, writer, signal));
+  const startAnimation = (draft: SceneDraft | null) => {
+    animated = true;
+    const b: Extract<Block, {t: 'anim'}> = {t: 'anim', title: draft?.title || 'Animation', code: draft?.code ?? ''};
+    blocks.push(b);
+    const id = writer.block(b, {status: 'rendering', code: b.code, note: draft ? 'Rendering with Manim' : 'Writing the Manim scene'});
+    const ctx: AnimationContext = {id, engine, manim, writer, question: query, blocks, signal};
+    renders.push(produceAnimation(ctx, draft));
   };
 
   const emit = (bs: Block[]) => {
     for (const b of bs) {
       if (b.t === 'anim') {
+        // A model may still write a scene inline; use it as the first draft.
         if (animated) continue;
-        animated = true;
-        blocks.push(b);
-        startAnimation(b);
+        startAnimation({title: b.title, code: b.code, narration: b.narration ?? []});
         continue;
       }
-      if (b.t === 'followups' && manim.available && !animated && b.items.length < 4 && !b.items.includes(ANIMATE_FOLLOWUP)) {
-        b.items.push(ANIMATE_FOLLOWUP);
+      if (b.t === 'followups') {
+        if (animate && !animated) {
+          heldFollowups = b;
+          continue;
+        }
+        if (manim.available && !animated && b.items.length < 4 && !b.items.includes(ANIMATE_FOLLOWUP)) b.items.push(ANIMATE_FOLLOWUP);
       }
       blocks.push(b);
       writer.block(b);
@@ -369,7 +388,7 @@ export async function answer(input: AskInput, send: (e: StreamEvent) => void, si
     writer.block(b);
   }
 
-  const system = systemPrompt(manim);
+  const system = systemPrompt(animate);
   if (spec) {
     const parts: ChatPart[] = shown.flatMap((s): ChatPart[] => [
       {type: 'text', text: `Source [${s.entry.n}]: ${s.visual!.name}`},
@@ -421,8 +440,13 @@ export async function answer(input: AskInput, send: (e: StreamEvent) => void, si
   if (!blocks.some((b) => b.t !== 'caveat')) {
     emit(extractiveAnswer(sources.filter((s) => !s.visual)));
   }
+  if (animate && !animated && !signal?.aborted) startAnimation(null);
+  if (heldFollowups) {
+    blocks.push(heldFollowups);
+    writer.block(heldFollowups);
+  }
   if (renders.length) {
-    writer.status('Rendering the animation with Manim');
+    writer.status('Making the animation');
     await Promise.all(renders);
   }
   const cited = new Set([...blocksToTranscript(blocks).matchAll(/\[(\d+)\]/g)].map((m) => m[1]));
@@ -430,45 +454,102 @@ export async function answer(input: AskInput, send: (e: StreamEvent) => void, si
   send({type: 'done', transcript: blocksToTranscript(blocks), mode: 'model', engine: engine.id});
 }
 
+interface SceneDraft {
+  title?: string;
+  code: string;
+  narration: string[];
+}
+
+interface AnimationContext {
+  id: string;
+  engine: EngineInfo;
+  manim: ManimStatus;
+  writer: SurfaceWriter;
+  question: string;
+  /** The answer's blocks, read for the scene prompt and the storyboard. */
+  blocks: Block[];
+  signal?: AbortSignal;
+}
+
+/** Repair attempts after the first render of the model's scene fails. */
+const MAX_REPAIRS = Math.max(0, Number(process.env.LEMMA_MANIM_REPAIRS ?? 2));
+
 /**
- * Voices the narration with MioTTS, renders the scene with it, and on a
- * failure asks the model once for a fix and renders again.
+ * Makes the answer's video, so that every answer that asks for one gets one:
+ *   1. the model writes a scene (a dedicated call, unless the answer had one),
+ *   2. the narration is voiced once with MioTTS,
+ *   3. the scene is rendered; a failure goes back to the model, up to twice,
+ *   4. if it still fails, a storyboard of the answer is rendered instead.
  */
-async function renderAnimation(
-  id: string,
-  block: Extract<Block, {t: 'anim'}>,
-  engine: EngineInfo,
-  manim: ManimStatus,
-  writer: SurfaceWriter,
-  signal?: AbortSignal,
-): Promise<void> {
-  let code = block.code;
-  let voice: VoiceLine[] = [];
-  let voiced = 0;
-  if (block.narration?.length) {
-    if (await ttsAvailable()) {
-      writer.animation(id, {status: 'rendering', code, note: 'Recording the narration with MioTTS'});
-      ({lines: voice, voiced} = await synthesize(block.narration, signal));
-    } else {
-      voice = block.narration.map((t) => ({text: speakable(t), duration: estimateSeconds(speakable(t)), wav: null}));
-    }
-    writer.animation(id, {status: 'rendering', code, note: 'Rendering with Manim'});
-  }
-  const narration = voice.map((v) => v.text);
-  let result: RenderResult = await renderScene(code, signal, voice);
-  if (!result.ok && (result.stage === 'render' || result.stage === 'validate') && !signal?.aborted) {
-    writer.animation(id, {status: 'rendering', code, note: 'Fixing a render error and trying again'});
-    const fixed = await repairScene(engine, manim, code, result, signal).catch((e) => {
-      console.warn('[lemma] scene repair failed', e);
+async function produceAnimation(ctx: AnimationContext, draft: SceneDraft | null): Promise<void> {
+  const {id, engine, manim, writer, signal} = ctx;
+  if (!draft) {
+    draft = await writeScene(ctx).catch((e) => {
+      console.warn('[lemmaslop] scene writing failed', e);
       return null;
     });
-    if (fixed && fixed !== code) {
+    if (draft?.title) writer.retitle(id, draft.title);
+  }
+  if (!manim.available) {
+    const code = draft?.code ?? storyboardScene(storyboardFromBlocks(ctx.question, ctx.blocks));
+    writer.animation(id, {status: 'unavailable', code, message: manim.reason, ...(draft?.narration.length ? {narration: draft.narration} : {})});
+    return;
+  }
+
+  let voice: VoiceLine[] = [];
+  let voiced = 0;
+  const record = async (lines: string[]) => {
+    if (lines.length && (await ttsAvailable())) {
+      writer.animation(id, {status: 'rendering', code: draft?.code ?? '', note: 'Recording the narration with MioTTS'});
+      ({lines: voice, voiced} = await synthesize(lines, signal));
+    } else {
+      voice = lines.map((t) => ({text: speakable(t), duration: estimateSeconds(speakable(t)), wav: null}));
+      voiced = 0;
+    }
+  };
+
+  let result: RenderResult | null = null;
+  let code = draft?.code ?? '';
+  if (draft) {
+    await record(draft.narration);
+    writer.animation(id, {status: 'rendering', code, note: 'Rendering with Manim'});
+    result = await renderScene(code, signal, voice);
+    for (let attempt = 1; !result.ok && result.stage !== 'unavailable' && attempt <= MAX_REPAIRS && !signal?.aborted; attempt++) {
+      writer.animation(id, {
+        status: 'rendering',
+        code,
+        note: attempt === 1 ? 'Fixing a render error and trying again' : 'Fixing the scene once more',
+      });
+      const fixed = await repairScene(engine, manim, code, result, signal).catch((e) => {
+        console.warn('[lemmaslop] scene repair failed', e);
+        return null;
+      });
+      if (!fixed || fixed === code) break;
       code = fixed;
       writer.animation(id, {status: 'rendering', code, note: 'Rendering the corrected scene'});
       result = await renderScene(code, signal, voice);
     }
   }
-  if (result.ok) {
+
+  let fallback = false;
+  if ((!result || (!result.ok && result.stage !== 'unavailable')) && !signal?.aborted) {
+    // Last resort: a storyboard built from the answer, which renders whenever Manim does.
+    const board = storyboardFromBlocks(ctx.question, ctx.blocks, draft?.narration);
+    if (voice.length !== board.narration.length || voice.some((v, i) => v.text !== speakable(board.narration[i]))) {
+      await record(board.narration);
+    }
+    const boardCode = storyboardScene(board);
+    writer.animation(id, {status: 'rendering', code: boardCode, note: draft ? 'Rendering a storyboard of the answer instead' : 'Rendering a storyboard of the answer'});
+    const boardResult = await renderScene(boardCode, signal, voice);
+    if (boardResult.ok || !result) {
+      result = boardResult;
+      code = boardCode;
+      fallback = boardResult.ok;
+    }
+  }
+
+  const narration = voice.map((v) => v.text);
+  if (result?.ok) {
     writer.animation(id, {
       status: 'ready',
       code,
@@ -476,16 +557,95 @@ async function renderAnimation(
       ...(result.poster ? {poster: `/api/animations/${result.id}.jpg`} : {}),
       ...(result.captions ? {captions: `/api/animations/${result.id}.vtt`} : {}),
       ...(narration.length ? {narration, voiced: voiced > 0} : {}),
+      ...(fallback ? {fallback: true} : {}),
       seconds: result.seconds,
     });
   } else {
     writer.animation(id, {
-      status: result.stage === 'unavailable' ? 'unavailable' : 'failed',
+      status: result?.stage === 'unavailable' ? 'unavailable' : 'failed',
       code,
-      message: result.error,
+      message: result ? result.error : 'The animation was cancelled.',
       ...(narration.length ? {narration} : {}),
     });
   }
+}
+
+export function sceneExample(latex: boolean): string {
+  const label = latex
+    ? 'MathTex(r"\\sum_{n=1}^{\\infty} \\frac{1}{2^n} = 1", font_size=48)'
+    : 'Text("sum of 1/2^n = 1", font_size=40)';
+  return `TITLE: Partial sums of a geometric series
+NARRATION:
+1. Each bar is a partial sum of one half to the n.
+2. The bars climb toward the dashed line at height one.
+3. So the whole series adds up to exactly one.
+CODE:
+\`\`\`python
+from manim import *
+
+class GeometricSums(Scene):
+    def construct(self):
+        axes = Axes(x_range=[0, 7, 1], y_range=[0, 1.2, 0.5], x_length=9, y_length=5).to_edge(DOWN)
+        d = narrate(self, 0)
+        self.play(Create(axes), run_time=d / 2)
+        bars = VGroup()
+        total = 0
+        for n in range(1, 7):
+            total += 0.5 ** n
+            height = axes.c2p(0, total)[1] - axes.c2p(0, 0)[1]
+            bar = Rectangle(width=0.8, height=height, fill_opacity=0.8, color=TEAL)
+            bar.move_to(axes.c2p(n, 0), aligned_edge=DOWN)
+            bars.add(bar)
+        self.play(LaggedStart(*[FadeIn(b, shift=UP * 0.3) for b in bars], lag_ratio=0.3), run_time=d / 2)
+        d = narrate(self, 1)
+        limit = DashedLine(axes.c2p(0, 1), axes.c2p(7, 1), color=YELLOW)
+        self.play(Create(limit), run_time=d)
+        d = narrate(self, 2)
+        label = ${label}.to_edge(UP)
+        self.play(Write(label), run_time=d)
+\`\`\``;
+}
+
+/** Splits a scene-writer reply into title, narration and code. */
+export function parseSceneReply(text: string): SceneDraft | null {
+  const clean = text.replace(/<think>[\s\S]*?<\/think>/g, '').replace(/^[\s\S]*?<\/think>/, '');
+  const code = extractCode(clean.includes('CODE:') ? clean.slice(clean.indexOf('CODE:') + 5) : clean);
+  if (!code) return null;
+  const title = clean.match(/^\s*TITLE:\s*(.+)$/m)?.[1].trim().replace(/^["']|["']$/g, '').slice(0, 100);
+  const head = clean.split(/CODE:|```/)[0];
+  const narrationPart = head.includes('NARRATION:') ? head.slice(head.indexOf('NARRATION:') + 10) : '';
+  const narration = narrationPart
+    .split('\n')
+    .map((l) => l.trim().replace(/^(\d+[.)]|[-*•])\s*/, '').trim())
+    .filter((l) => l.length >= 2 && !/^TITLE:/i.test(l))
+    .slice(0, 8)
+    .map((l) => l.slice(0, 260));
+  return {title, code, narration};
+}
+
+/** Asks the answer's model for a scene, with reasoning off for open models. */
+async function writeScene(ctx: AnimationContext): Promise<SceneDraft | null> {
+  const {engine, manim, signal} = ctx;
+  // Without a renderer the code is still shown to the user to run themselves.
+  const latex = manim.available ? manim.latex : true;
+  const system = `You write one Manim Community Edition scene that animates the idea of a maths answer for a university student. The scene should show the idea step by step, not decorate it.
+${animationRules(latex)}
+
+Reply in exactly this format and nothing else:
+TITLE: a caption of at most eight words
+NARRATION:
+1. first spoken sentence
+2. second spoken sentence
+CODE:
+\`\`\`python
+the scene
+\`\`\`
+
+Example reply:
+${sceneExample(latex)}`;
+  const answerText = blocksToTranscript(ctx.blocks.filter((b) => b.t !== 'anim')).slice(0, 6000);
+  const user = `Question: ${ctx.question}\n\nThe answer to animate:\n${answerText || '(no written answer)'}\n\nWrite the scene now.`;
+  return parseSceneReply(await complete(engine, system, user, 8000, signal));
 }
 
 async function repairScene(
@@ -495,9 +655,17 @@ async function repairScene(
   failure: Extract<RenderResult, {ok: false}>,
   signal?: AbortSignal,
 ): Promise<string | null> {
-  const system = `You fix Manim Community Edition scenes that failed to render. Keep the same idea, visual plan and narrate(self, i) calls. Reply with only the corrected Python code in one \`\`\`python block.\n${animationRules(manim.latex)}`;
-  const user = `This scene failed.\n\n\`\`\`python\n${code}\n\`\`\`\n\nError:\n${failure.error}\n${failure.detail ?? ''}`.slice(0, 20_000);
+  const system = `You fix Manim Community Edition scenes that failed to render. Keep the same idea and narrate(self, i) calls, but prefer the simplest code that certainly runs: replace anything the error points at with basic shapes, Text and standard animations. Reply with only the corrected Python code in one \`\`\`python block.\n${animationRules(manim.latex)}`;
+  const hint =
+    failure.stage === 'timeout'
+      ? '\nThe render was too slow. Use fewer objects, no per-frame updaters, and shorter run_time values.'
+      : '';
+  const user = `This scene failed.\n\n\`\`\`python\n${code}\n\`\`\`\n\nError:\n${failure.error}\n${failure.detail ?? ''}${hint}`.slice(0, 20_000);
+  return extractCode(await complete(engine, system, user, 8000, signal));
+}
 
+/** One non-streaming-to-the-user completion, used for scenes and repairs. */
+async function complete(engine: EngineInfo, system: string, user: string, maxTokens: number, signal?: AbortSignal): Promise<string> {
   const spec = localSpec(engine.id);
   if (spec) {
     let text = '';
@@ -508,10 +676,13 @@ async function repairScene(
       ],
       signal,
       {},
-      spec,
+      {...spec, maxTokens},
+      // Code needs no long reasoning trace, and a cooler temperature keeps it on the API.
+      {chat_template_kwargs: {enable_thinking: false}, temperature: 0.6},
+      'text',
     ))
       text += t;
-    return extractCode(text);
+    return text;
   }
   const client = new Anthropic();
   const msg = await client.beta.messages.create(
@@ -526,8 +697,7 @@ async function repairScene(
     },
     {signal},
   );
-  const text = msg.content.map((b) => (b.type === 'text' ? b.text : '')).join('');
-  return extractCode(text);
+  return msg.content.map((b) => (b.type === 'text' ? b.text : '')).join('');
 }
 
 /** Streams the Opus answer; returns a caveat to append when the turn ended abnormally. */

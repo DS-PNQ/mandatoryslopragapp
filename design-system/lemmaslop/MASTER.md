@@ -6,7 +6,7 @@
 
 ---
 
-**Project:** Lemma
+**Project:** LemmaSlop (formerly Lemma)
 **Generated:** 2026-11-26 19:16:46
 **Category:** Productivity Tool
 **Token files:** `tokens.json` (W3C Design Tokens Community Group JSON).

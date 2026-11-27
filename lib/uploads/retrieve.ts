@@ -105,6 +105,11 @@ export function chunkAttachment(a: Attachment): UploadChunk[] {
 /** Small enough to give the model every chunk instead of a ranked subset. */
 const WHOLE_LIMIT = 14_000;
 
+/** True when the selection is small enough to be sent whole, unranked. */
+export function sendsWhole(attachments: Attachment[]): boolean {
+  return attachments.flatMap(chunkAttachment).reduce((n, c) => n + c.text.length, 0) <= WHOLE_LIMIT;
+}
+
 /**
  * Picks the upload passages for a question. Small uploads are sent whole, in
  * order. Larger ones are ranked with BM25; the opening chunk of each source is
