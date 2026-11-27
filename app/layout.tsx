@@ -6,6 +6,7 @@ import {NotebookHost} from '@/components/NotebookHost';
 import {engines} from '@/lib/agent/answer';
 import {getManimStatus} from '@/lib/manim/render';
 import {getIndex} from '@/lib/rag/load';
+import {ocrConfig} from '@/lib/uploads/transcribe';
 import {THEME_SCRIPT, ThemeToggle} from '@/components/ThemeToggle';
 import '@fontsource-variable/inter/index.css';
 import '@fontsource/instrument-serif/400.css';
@@ -62,6 +63,7 @@ export default async function RootLayout({children}: {children: React.ReactNode}
           engines={engines().map(({id, label, model, available, vision}) => ({id, label, model, available, vision}))}
           library={{notes: new Set(index.chunks.map((c) => c.noteId)).size, passages: index.chunks.length}}
           animation={{available: manim.available}}
+          ocr={{available: ocrConfig() !== null, model: ocrConfig()?.label ?? null}}
         />
         {children}
       </body>

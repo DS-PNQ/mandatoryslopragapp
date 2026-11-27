@@ -15,7 +15,7 @@ import {
 import {mathCatalog} from './catalog';
 import {AlertCircle, ArrowUp, BookOpen, FileText, Film, ImageIcon, PanelLeft, Paperclip, RotateCcw, Upload, X} from './icons';
 import {loadSources, putSource, readPref, removeSource, shrinkImage, writePref, type NotebookSource} from './source-store';
-import {SourcesPanel, type PendingUpload} from './SourcesPanel';
+import {SourcesPanel, type OcrProgress, type PendingUpload} from './SourcesPanel';
 
 interface Entry {
   surfaceId: string;
@@ -61,11 +61,14 @@ export function Workspace({
   engines,
   library,
   animation,
+  ocr = {available: false, model: null},
   active = true,
 }: {
   engines: EngineOption[];
   library: {notes: number; passages: number};
   animation: {available: boolean};
+  /** A vision model that turns scanned PDFs into text at upload. */
+  ocr?: {available: boolean; model: string | null};
   /** False while another tab is shown; the notebook stays mounted. */
   active?: boolean;
 }) {
@@ -76,6 +79,8 @@ export function Workspace({
   const [surfaces, setSurfaces] = useState<Map<string, Surface>>(new Map());
   const [sources, setSources] = useState<NotebookSource[]>([]);
   const [pending, setPending] = useState<PendingUpload[]>([]);
+  const [reading, setReading] = useState<Record<string, OcrProgress>>({});
+  const ocrAvailable = ocr.available;
   const [useLibrary, setUseLibraryState] = useState(true);
   const [animate, setAnimate] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -129,6 +134,61 @@ export function Workspace({
     writePref('library', v ? 'on' : 'off');
   };
 
+  /** Transcribes a scanned PDF page by page, then keeps the text in place of the page images. */
+  const transcribe = useCallback(async (source: NotebookSource) => {
+    if (!source.media || source.media.type !== 'application/pdf') return;
+    setReading((r) => ({...r, [source.id]: {done: 0, pages: source.pages ?? 0}}));
+    const fail = (error: string) => setReading((r) => ({...r, [source.id]: {done: 0, pages: source.pages ?? 0, error}}));
+    try {
+      const res = await fetch('/api/transcribe', {
+        method: 'POST',
+        headers: {'content-type': 'application/json'},
+        body: JSON.stringify({data: source.media.data}),
+      });
+      if (!res.ok || !res.body) {
+        const json = await res.json().catch(() => null);
+        return fail(json?.error ?? `The transcription failed (${res.status}).`);
+      }
+      const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+      let buffer = '';
+      for (;;) {
+        const {value, done} = await reader.read();
+        if (done) break;
+        buffer += value;
+        let nl: number;
+        while ((nl = buffer.indexOf('\n')) >= 0) {
+          const line = buffer.slice(0, nl).trim();
+          buffer = buffer.slice(nl + 1);
+          if (!line) continue;
+          const event = JSON.parse(line);
+          if (event.type === 'start' || event.type === 'page') {
+            setReading((r) => ({...r, [source.id]: {done: event.type === 'page' ? event.page : 0, pages: event.pages}}));
+          } else if (event.type === 'error') {
+            return fail(event.message);
+          } else if (event.type === 'done') {
+            const readable = event.pages - event.failed.length;
+            if (readable === 0) return fail(`${event.model} could not read any page.`);
+            const next: NotebookSource = {
+              ...source,
+              text: event.text,
+              chars: event.text.length,
+              pages: event.total,
+              media: undefined,
+              ocr: {model: event.model, failed: event.failed, total: event.total},
+            };
+            await putSource(next);
+            setSources((list) => list.map((s) => (s.id === source.id ? {...next, enabled: s.enabled} : s)));
+            setReading(({[source.id]: _, ...rest}) => rest);
+            return;
+          }
+        }
+      }
+      fail('The transcription stopped before it finished.');
+    } catch (error) {
+      fail(error instanceof Error ? error.message : 'The transcription failed.');
+    }
+  }, []);
+
   const addFiles = useCallback(async (files: File[]) => {
     const room = MAX_SOURCES - state.current.sources.length;
     const list = files.slice(0, Math.max(0, room));
@@ -154,13 +214,14 @@ export function Workspace({
           await putSource(source);
           setSources((s) => [...s, source]);
           setPending((p) => p.filter((x) => x.key !== key));
+          if (ocrAvailable && source.kind === 'pdf' && source.media) void transcribe(source);
         } catch (error) {
           const message = error instanceof Error ? error.message : 'The upload failed.';
           setPending((p) => p.map((x) => (x.key === key ? {...x, state: 'error', error: message} : x)));
         }
       }),
     );
-  }, []);
+  }, [ocrAvailable, transcribe]);
 
   const toggleSource = (id: string, enabled: boolean) => {
     setSources((list) =>
@@ -341,6 +402,12 @@ export function Workspace({
         onRemove={deleteSource}
         onDismissPending={(key) => setPending((p) => p.filter((x) => x.key !== key))}
         onPick={pickFiles}
+        reading={reading}
+        onTranscribe={ocr.available ? (id) => {
+          const s = sources.find((x) => x.id === id);
+          if (s) void transcribe(s);
+        } : undefined}
+        ocrModel={ocr.model}
         entries={entries}
         noModel={configured.length === 0}
       />

@@ -12,6 +12,7 @@ export function NotebookHost(props: {
   engines: EngineOption[];
   library: {notes: number; passages: number};
   animation: {available: boolean};
+  ocr: {available: boolean; model: string | null};
 }) {
   const active = usePathname() === '/';
   return (

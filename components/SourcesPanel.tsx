@@ -10,6 +10,12 @@ export interface PendingUpload {
   error?: string;
 }
 
+export interface OcrProgress {
+  done: number;
+  pages: number;
+  error?: string;
+}
+
 export interface SessionEntry {
   surfaceId: string;
   question: string;
@@ -26,12 +32,61 @@ const KIND_LABEL: Record<NotebookSource['kind'], string> = {
 
 function describe(s: NotebookSource): string {
   if (s.kind === 'image') return 'Image';
-  if (s.kind === 'pdf' && s.media) return `Scanned PDF${s.pages ? ` · ${s.pages} pages` : ''} · read as images`;
+  if (s.kind === 'pdf' && s.media) return `Scanned PDF${s.pages ? ` · ${s.pages} pages` : ''} · images only`;
+  if (s.ocr) {
+    const parts = [`Scanned PDF · ${s.ocr.total} ${s.ocr.total === 1 ? 'page' : 'pages'}`, `transcribed by ${s.ocr.model}`];
+    if (s.ocr.failed.length) parts.push(`${s.ocr.failed.length} unreadable`);
+    const read = s.text.split('\f').length;
+    if (read < s.ocr.total) parts.push(`first ${read} pages`);
+    return parts.join(' · ');
+  }
   const parts = [KIND_LABEL[s.kind]];
   if (s.pages) parts.push(`${s.pages} ${s.pages === 1 ? 'page' : 'pages'}`);
   parts.push(s.chars >= 1000 ? `${Math.round(s.chars / 1000)}k characters` : `${s.chars} characters`);
   if (s.truncated) parts.push('first 400k used');
   return parts.join(' · ');
+}
+
+function SourceMeta({
+  source: s,
+  progress,
+  onTranscribe,
+  ocrModel,
+}: {
+  source: NotebookSource;
+  progress?: OcrProgress;
+  onTranscribe?: (id: string) => void;
+  ocrModel: string | null;
+}) {
+  const scanned = s.kind === 'pdf' && Boolean(s.media);
+  if (progress && !progress.error) {
+    return (
+      <span className="nb-meta nb-reading" role="status">
+        <Spinner size={13} className="spin" />
+        {progress.done === 0 ? `${ocrModel ?? 'The model'} is reading the pages` : `Read page ${progress.done} of ${progress.pages}`}
+        {progress.pages > 0 ? (
+          <span className="nb-progress" aria-hidden="true">
+            <span style={{width: `${Math.round((progress.done / progress.pages) * 100)}%`}} />
+          </span>
+        ) : null}
+      </span>
+    );
+  }
+  return (
+    <>
+      <span className="nb-meta">{describe(s)}</span>
+      {progress?.error ? (
+        <span className="nb-meta nb-error" role="alert">
+          {progress.error}
+        </span>
+      ) : null}
+      {scanned && onTranscribe ? (
+        <button type="button" className="text-button nb-action" onClick={() => onTranscribe(s.id)}>
+          {progress?.error ? 'Try again' : `Transcribe with ${ocrModel ?? 'the model'}`}
+        </button>
+      ) : null}
+    </>
+  );
 }
 
 function Switch({checked, onChange, label}: {checked: boolean; onChange: (v: boolean) => void; label: string}) {
@@ -58,6 +113,9 @@ export function SourcesPanel({
   onRemove,
   onDismissPending,
   onPick,
+  reading,
+  onTranscribe,
+  ocrModel,
   entries,
   noModel,
 }: {
@@ -72,6 +130,10 @@ export function SourcesPanel({
   onRemove: (id: string) => void;
   onDismissPending: (key: string) => void;
   onPick: () => void;
+  reading: Record<string, OcrProgress>;
+  /** Present when a transcription model is configured. */
+  onTranscribe?: (id: string) => void;
+  ocrModel: string | null;
   entries: SessionEntry[];
   noModel: boolean;
 }) {
@@ -122,7 +184,7 @@ export function SourcesPanel({
                 <span className="nb-name" title={s.name}>
                   {s.name}
                 </span>
-                <span className="nb-meta">{describe(s)}</span>
+                <SourceMeta source={s} progress={reading[s.id]} onTranscribe={onTranscribe} ocrModel={ocrModel} />
               </span>
               <Switch checked={s.enabled} onChange={(v) => onToggle(s.id, v)} label={`Use ${s.name}`} />
               <button type="button" className="icon-button subtle" onClick={() => onRemove(s.id)} aria-label={`Remove ${s.name}`}>

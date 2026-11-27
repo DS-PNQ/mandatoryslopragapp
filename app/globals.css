@@ -2356,3 +2356,36 @@ body {
 .thread .composer {
   max-width: calc(var(--chat-width) - 48px);
 }
+
+/* Scanned PDF transcription in the sources panel */
+.nb-reading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent);
+}
+.nb-progress {
+  flex-basis: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--color-muted);
+  overflow: hidden;
+}
+.nb-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--drop);
+  transition: width var(--base) var(--ease);
+}
+.nb-error {
+  color: var(--color-destructive);
+}
+.nb-action {
+  justify-self: start;
+  margin: 2px 0 0;
+  padding: 2px 0;
+  min-height: 28px;
+  font-size: 12.5px;
+}
