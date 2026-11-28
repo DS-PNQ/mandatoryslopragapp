@@ -108,11 +108,17 @@ The built-in index needs no server and runs anywhere, Vercel included. Two optio
 
 | Stage | Model | Configure |
 |---|---|---|
-| Dense embeddings | [Qwen3-Embedding-0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF) (Apache 2.0) | `LEMMA_EMBED_URL` |
+| Dense embeddings | [Qwen3-Embedding-0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF) or [EmbeddingGemma 2](https://huggingface.co/ggml-org/embeddinggemma-2-GGUF) (both Apache 2.0) | `LEMMA_EMBED_URL`, `LEMMA_EMBED_MODEL` |
 | Reranker | [Qwen3-Reranker-0.6B](https://huggingface.co/ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF) (Apache 2.0) | `LEMMA_RERANK_URL` |
 
 ```bash
 llama-server -hf Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0 --embedding --pooling last -c 8192 -b 8192 -ub 8192 --port 8097
+```
+
+or, smaller and faster on a CPU (set `LEMMA_EMBED_MODEL=embeddinggemma-2`; needs a llama.cpp recent enough to know the `gemma-embedding2` architecture):
+
+```bash
+llama-server -hf ggml-org/embeddinggemma-2-GGUF:Q8_0 --embedding --pooling mean -c 8192 -b 8192 -ub 8192 --port 8097
 ```
 
 ```bash
@@ -121,11 +127,41 @@ llama-server -hf ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF --reranking -c 8192 -b 4
 
 Then set `LEMMA_EMBED_URL=http://127.0.0.1:8097/v1` and `LEMMA_RERANK_URL=http://127.0.0.1:8098/v1`. Choices in `lib/rag/neural.ts` and `lib/rag/hybrid.ts`:
 
-- **Instructions on queries only.** Qwen3-Embedding is instruction-aware; its model card reports 1–5% lower retrieval without a query instruction. Passages are embedded without one.
+- **Dense order first.** With an embedder, its ranking decides; LSA and BM25 only break ties and add candidates after it. Equal-weight fusion, the usual hybrid recipe, cost a third of the top hits on this app's questions (see "Choosing the embedder" below). Without an embedder, LSA and BM25 are fused with equal weights as before. `LEMMA_FUSION_WEIGHTS="lsa,bm25,neural"` overrides the weights.
+- **Each model's own prompts.** Qwen3-Embedding gets an instruction on queries (its model card reports 1–5% lower retrieval without one) and bare passages. EmbeddingGemma 2 gets `task: search result | query: …` and `title: <note § section> | text: …`, its documented retrieval format. The format follows the model name, or `LEMMA_EMBED_PROMPTS`. `LEMMA_EMBED_DIM` truncates vectors (Matryoshka) for either.
 - **Context headers.** Each passage is embedded with its note and section ("Infinite series § Ratio test") or its file and page, the cheap form of contextual retrieval: a chunk that says "the series converges" is embedded knowing which series.
 - **LaTeX verbalised for the embedder.** `\sum` becomes "sum" and `x^2` "x squared", since embedding natural-language statements of theorems beats embedding raw LaTeX ([arXiv:2602.05216](https://arxiv.org/abs/2602.05216)). The answer model still reads the original text.
 - **Uploads too.** Large uploads (over about 14,000 characters) are ranked by BM25 and embeddings fused with RRF, then reranked. Vectors are cached by content hash, so each passage is embedded once per server process; the library is embedded once, on the first question.
 - **Never blocking.** Every call has a timeout; a failing endpoint is skipped for a minute and retrieval falls back to the built-in index.
+
+### Choosing the embedder
+
+[EmbeddingGemma 2](https://huggingface.co/google/embeddinggemma-2) (Google DeepMind, October 2026, Apache 2.0) is a 740M-parameter multimodal embedder whose text path is only 270M parameters: 768-dimensional vectors with Matryoshka truncation to 512, 256 or 128, an 8K-token context, and a 310 MB `Q8_0` GGUF, half the size of Qwen3-Embedding-0.6B. Google reports MTEB English v2 68.5 (Qwen3-Embedding-0.6B's card: 70.7) and a large gain on code retrieval over EmbeddingGemma 1 (78.7 vs 68.8). It must run in bfloat16 or float32, not float16, which returns NaNs.
+
+To decide between them for this app, `bench/embed-eval.ts` runs 52 student-style questions, worded away from the section titles, each with its correct library passage (`bench/retrieval-eval.json`), through the app's own `searchLibrary()`. It ran on CPU here: llama.cpp built from source, 4 threads, `Q8_0` files.
+
+| Configuration | Hit@1 | Recall@6 | Recall@20 | MRR@10 | Per question (CPU) | Embed library (CPU) |
+|---|---|---|---|---|---|---|
+| Built-in only: LSA + e-means + BM25 | 61.5% | 86.5% | 92.3% | 0.702 | <1 ms | none |
+| Qwen3-Embedding, equal-weight fusion (previous version) | 69.2% | 90.4% | 100% | 0.781 | 153 ms | 34 s |
+| **Qwen3-Embedding, dense-first (now)** | **92.3%** | **100%** | 100% | **0.958** | 102 ms | 31 s |
+| EmbeddingGemma 2, equal-weight fusion | 59.6% | 92.3% | 100% | 0.728 | 22 ms | 12 s |
+| **EmbeddingGemma 2, dense-first (now)** | **76.9%** | **98.1%** | 100% | **0.851** | 25 ms | 12 s |
+| EmbeddingGemma 2 alone, "question answering" prompt | 75.0% | 98.1% | 100% | 0.835 | | |
+| EmbeddingGemma 2 alone, truncated to 256-d | 71.2% | 98.1% | 100% | 0.815 | | |
+
+What this says:
+
+- **Qwen3-Embedding retrieves better on maths.** It puts the right passage first 92% of the time against EmbeddingGemma 2's 77%; both have it in the top six almost always. With six passages going to the model, both work, but Qwen3's first passage is more often the one that matters.
+- **EmbeddingGemma 2 is the CPU and low-memory choice.** It is 4× faster per question and 2.7× faster at embedding the library on a CPU, at half the size. The Colab notebook uses it when Qwen3 does not fit on the GPU next to Bonsai.
+- **Fusion weights mattered more than the model.** The usual hybrid recipe, equal-weight RRF with BM25, lowered both models, since on these questions the lexical lists are much weaker than the dense one. `bench/fusion-eval.ts` swept the weights: any weight that let BM25 or LSA reorder the dense list lowered hit@1, and on 12 exact-term questions (theorem names, acronyms: `bench/retrieval-eval-terms.json`) adding BM25 and LSA at any weight changed nothing for either model (Qwen3 92% hit@1, equal to the lexical baseline; EmbeddingGemma 2 83%). So the dense order now decides.
+- **Prompt and truncation.** EmbeddingGemma 2's "search result" prompt edged out "question answering" (MRR 0.851 vs 0.835) and is the default (`LEMMA_EMBED_GEMMA_TASK`). Truncating to 256 dimensions cost 6 points of hit@1 for no practical saving on a 110-passage library.
+
+Caveats: 52 questions is a small set (one question is about 2 points), the notes library is the only corpus measured, and uploads were not evaluated. Run it yourself with the servers above:
+
+```bash
+EVAL_QWEN_URL=http://127.0.0.1:8202/v1 EVAL_GEMMA_URL=http://127.0.0.1:8201/v1 npx tsx bench/embed-eval.ts
+```
 
 ## The e-means implementation
 
@@ -264,7 +300,7 @@ Other speedups: narration lines are voiced three at a time (`MIOTTS_CONCURRENCY`
 npm test
 ```
 
-The tests run the Opus and LFM3 paths against local mock servers (no keys or network), and check that every message the agent emits passes the A2UI `MessageProcessor`'s validation for the catalog. They also cover the reasoning-trace filter, the markdown sanitizer, PDF/Word/image parsing, upload retrieval, the Manim scene validator (which needs only `python3`), the MioTTS client against a mock of its API, the neural retrieval stages against mock embedding and rerank endpoints (including a dead endpoint), and the animation pipeline end to end against a mock Bonsai server (scene call with reasoning off, two repairs, storyboard fallback). The render tests run when `MANIM_PYTHON` points at a Python with Manim installed; they render the storyboard, the prompt's example scene, and a scene that uses old Manim names and a bad `narrate()` index, and run the code shown in the chat with the Manim CLI. `tests/native-core.test.ts` checks the Rust core against the TypeScript tokenizer and BM25.
+The tests run the Opus and LFM3 paths against local mock servers (no keys or network), and check that every message the agent emits passes the A2UI `MessageProcessor`'s validation for the catalog. They also cover the reasoning-trace filter, the markdown sanitizer, PDF/Word/image parsing, upload retrieval, the Manim scene validator (which needs only `python3`), the MioTTS client against a mock of its API, the neural retrieval stages against mock embedding and rerank endpoints (including a dead endpoint, dense-first ranking, and EmbeddingGemma 2's prompts), and the animation pipeline end to end against a mock Bonsai server (scene call with reasoning off, two repairs, storyboard fallback). The render tests run when `MANIM_PYTHON` points at a Python with Manim installed; they render the storyboard, the prompt's example scene, and a scene that uses old Manim names and a bad `narrate()` index, and run the code shown in the chat with the Manim CLI. `tests/native-core.test.ts` checks the Rust core against the TypeScript tokenizer and BM25.
 
 ## Deploy on Vercel
 
@@ -284,7 +320,7 @@ The interface was redesigned with the [UI UX Pro Max](https://github.com/nextlev
 
 ## License
 
-LemmaSlop is released under the [MIT License](LICENSE). The project-scoped skills in `.claude/skills/` keep their own licenses (UI UX Pro Max and logo-design are both MIT). Model weights are downloaded at run time under their own licenses (Ternary Bonsai, the Qwen3 embedding and reranker, and MioTTS are Apache 2.0; LFM3 has Liquid AI's license), and the default MioTTS reference voice has the use restrictions described above.
+LemmaSlop is released under the [MIT License](LICENSE). The project-scoped skills in `.claude/skills/` keep their own licenses (UI UX Pro Max and logo-design are both MIT). Model weights are downloaded at run time under their own licenses (Ternary Bonsai, the Qwen3 embedding and reranker, EmbeddingGemma 2, and MioTTS are Apache 2.0; LFM3 has Liquid AI's license), and the default MioTTS reference voice has the use restrictions described above.
 
 ## Layout
 
