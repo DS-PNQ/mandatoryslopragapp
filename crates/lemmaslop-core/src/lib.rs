@@ -50,10 +50,18 @@ pub unsafe extern "C" fn ls_free(ptr: *mut u8, len: usize) {
 /// # Safety
 /// `text` holds `text_len` bytes; `offsets` holds `n + 1` ascending u32 offsets into it.
 #[no_mangle]
-pub unsafe extern "C" fn ls_index_new(text: *const u8, text_len: usize, offsets: *const u32, n: usize) -> u32 {
+pub unsafe extern "C" fn ls_index_new(
+    text: *const u8,
+    text_len: usize,
+    offsets: *const u32,
+    n: usize,
+) -> u32 {
     let all = str_from(text, text_len);
     let offs = std::slice::from_raw_parts(offsets, n + 1);
-    let docs = (0..n).map(|i| all.get(offs[i] as usize..offs[i + 1] as usize).unwrap_or(""));
+    let docs = (0..n).map(|i| {
+        all.get(offs[i] as usize..offs[i + 1] as usize)
+            .unwrap_or("")
+    });
     let index = bm25::Index::new(docs);
     INDEXES.with(|cell| {
         let mut list = cell.borrow_mut();
@@ -70,11 +78,18 @@ pub unsafe extern "C" fn ls_index_new(text: *const u8, text_len: usize, offsets:
 /// # Safety
 /// `out` must have room for as many f64 as the index has passages.
 #[no_mangle]
-pub unsafe extern "C" fn ls_index_scores(handle: u32, query: *const u8, query_len: usize, out: *mut f64) -> i32 {
+pub unsafe extern "C" fn ls_index_scores(
+    handle: u32,
+    query: *const u8,
+    query_len: usize,
+    out: *mut f64,
+) -> i32 {
     let q = str_from(query, query_len);
     INDEXES.with(|cell| {
         let list = cell.borrow();
-        let Some(Some(index)) = list.get((handle as usize).wrapping_sub(1)) else { return -1 };
+        let Some(Some(index)) = list.get((handle as usize).wrapping_sub(1)) else {
+            return -1;
+        };
         let scores = index.scores(q);
         std::ptr::copy_nonoverlapping(scores.as_ptr(), out, scores.len());
         scores.len() as i32

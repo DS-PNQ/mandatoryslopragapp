@@ -6,7 +6,10 @@ fn main() {
     let pages: Vec<&str> = text.split('\u{c}').collect();
     for _ in 0..2 {
         let t = Instant::now();
-        let n: usize = pages.iter().map(|p| lemmaslop_core::text::tokens(p).len()).sum();
+        let n: usize = pages
+            .iter()
+            .map(|p| lemmaslop_core::text::tokens(p).len())
+            .sum();
         println!("tokens: {n} in {:?}", t.elapsed());
         let t = Instant::now();
         let idx = lemmaslop_core::bm25::Index::new(pages.iter().copied());

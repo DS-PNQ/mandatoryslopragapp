@@ -57,7 +57,12 @@ impl Builder {
 
 impl Index {
     pub fn new<'a>(docs: impl IntoIterator<Item = &'a str>) -> Index {
-        let mut b = Builder { vocab: FxMap::default(), postings: Vec::new(), counts: Vec::new(), touched: Vec::new() };
+        let mut b = Builder {
+            vocab: FxMap::default(),
+            postings: Vec::new(),
+            counts: Vec::new(),
+            touched: Vec::new(),
+        };
         // Raw word -> term id (None: filtered out). Each distinct word is
         // checked and stemmed once per index, not at every occurrence.
         let mut seen: FxMap<Vec<u8>, Option<u32>> = FxMap::default();
@@ -98,8 +103,17 @@ impl Index {
             b.end_doc(d as u32);
             lengths.push(len as f64);
         }
-        let avg = if lengths.is_empty() { 0.0 } else { lengths.iter().sum::<f64>() / lengths.len() as f64 };
-        Index { vocab: b.vocab, postings: b.postings, lengths, avg }
+        let avg = if lengths.is_empty() {
+            0.0
+        } else {
+            lengths.iter().sum::<f64>() / lengths.len() as f64
+        };
+        Index {
+            vocab: b.vocab,
+            postings: b.postings,
+            lengths,
+            avg,
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -117,7 +131,9 @@ impl Index {
         let n = self.lengths.len() as f64;
         let mut out = vec![0.0f64; self.lengths.len()];
         for (term, _) in term_counts(query) {
-            let Some(&id) = self.vocab.get(&term) else { continue };
+            let Some(&id) = self.vocab.get(&term) else {
+                continue;
+            };
             let list = &self.postings[id as usize];
             let df = list.len() as f64;
             let idf = (1.0 + (n - df + 0.5) / (df + 0.5)).ln();
@@ -139,7 +155,11 @@ mod tests {
 
     #[test]
     fn ranks_the_matching_passage_first() {
-        let idx = Index::new(["The ratio test compares consecutive terms.", "Eigenvalues of symmetric matrices are real.", "Probability of an event."]);
+        let idx = Index::new([
+            "The ratio test compares consecutive terms.",
+            "Eigenvalues of symmetric matrices are real.",
+            "Probability of an event.",
+        ]);
         let s = idx.scores("Are the eigenvalues of a symmetric matrix real?");
         assert!(s[1] > s[0] && s[1] > s[2]);
         assert_eq!(idx.scores("nothing matches here")[0], 0.0);
