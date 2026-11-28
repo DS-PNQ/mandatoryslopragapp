@@ -22,7 +22,7 @@ The left panel works like a notebook's source list. **Add sources** (or drag fil
 
 Files are 15 MB at most and a notebook holds 12. The server only parses an upload and returns its text; it stores nothing. The browser keeps the sources in IndexedDB, so they survive a reload, and sends the selected ones with each question. Each source has a switch, and so does the notes library.
 
-At question time the uploads are split into passages of about 1,100 characters. If everything selected fits in about 14,000 characters it is all sent; otherwise BM25 picks the best six passages plus the opening of each file. Upload passages are numbered first, then up to three library passages (six when nothing is uploaded), then images. Images need a vision model (Opus, or Bonsai with its vision projector); LFM3 reads text only, and the composer says so when an image is selected.
+At question time the uploads are split into passages of about 1,100 characters. If everything selected fits in about 14,000 characters it is all sent; otherwise BM25 picks the best six passages plus the opening of each file. Each selection of files is chunked and indexed once and cached by content hash, so later questions about the same files only score (see "Rust text core" below). Upload passages are numbered first, then up to three library passages (six when nothing is uploaded), then images. Images need a vision model (Opus, or Bonsai with its vision projector); LFM3 reads text only, and the composer says so when an image is selected.
 
 ### Scanned PDFs without Opus
 
@@ -48,6 +48,8 @@ Making the video is a pipeline built so that every request ends in one:
 3. **Voice once.** The narration is voiced with MioTTS once and reused by every render attempt.
 4. **Render, repair twice.** If the render fails or times out, the error and traceback go back to the model for a fix, up to `LEMMA_MANIM_REPAIRS` (default 2) times.
 5. **Storyboard fallback.** If it still fails, the server renders a storyboard generated from the answer with fixed templates: the title, the key formulas boxed, and each step as a caption, narrated beat by beat. It renders whenever Manim does, and the player says it is a storyboard.
+
+The code shown under a video, or in place of one, is runnable on its own: scenes call `narrate(self, i)`, which only the app's runner defines, so the displayed and copied code carries a small stand-in after its imports that returns each line's estimated length. `manim -pql scene.py` works on it as is (a test runs it with the Manim CLI).
 
 The runner also forgives the mistakes that most often broke scenes: API names from older Manim versions (`ShowCreation`, `TextMobject`, `FadeInFromDown`, …) are aliased; `MathTex`/`Tex` fall back to Unicode text when LaTeX is not installed or a formula does not compile; `narrate()` with a wrong or repeated index takes the next unspoken line instead of raising; and narration lines the scene never called are still spoken after the last one.
 
@@ -228,13 +230,41 @@ The first run takes about 10–15 minutes, mostly compiling llama.cpp. The compi
 
 The first run takes about 15 minutes on a T4, most of it downloads. Stock llama.cpp comes from conda-forge's CUDA 12 build (native code for T4, L4, A100 and H100); its environment also supplies the CUDA 12 runtime libraries the PrismML build links against. With `LLAMA_INSTALL = "source"`, or if conda fails, llama.cpp is compiled for the GPU instead (20–25 minutes) and, with `CACHE_TO_DRIVE = True`, cached in `MyDrive/lemmaslop-cache`.
 
+## Rust text core
+
+Tokenizing uploaded text is the only retrieval step that costs real CPU time: the tokenizer, stemmer and BM25 scoring for uploads are written in Rust (`crates/lemmaslop-core`), compiled to WebAssembly, and committed as `lib/native/lemmaslop_core.wasm` (150 KB). WebAssembly rather than a native addon means one file that runs wherever Node does (a laptop, Colab, Vercel's serverless functions), with no per-platform builds. The module has no imports and a plain C ABI, so building it needs only `cargo`:
+
+```bash
+rustup target add wasm32-unknown-unknown
+```
+
+```bash
+npm run build:native
+```
+
+The TypeScript tokenizer in `lib/rag/text.ts` remains the specification. `tests/native-core.test.ts` checks that both give the same terms, counts and order on the whole library and on Unicode, LaTeX and compound-word edge cases, the same BM25 scores (to 1e-12) and the same ranked passages. If the `.wasm` file is missing or fails to load, or with `LEMMA_NATIVE=off`, the app uses the TypeScript code. `npm run test:native` runs the crate's own tests.
+
+Measured with `npm run bench` on a 1.48M-character upload (the size cap), 4 vCPU:
+
+| Step | TypeScript | Rust/WASM |
+|---|---|---|
+| First question about a selection (tokenize, index, score) | 129 ms | 30 ms |
+| Later questions (cached index, score only) | 2.1 ms | 2.3 ms |
+| Library search (110 passages, LSA + IVF + BM25 + RRF) | 0.08 ms | not ported |
+
+The cache is the larger win (every question after the first skips tokenizing in either language), and the Rust core makes the first question 4.3× faster. Library search and the index build were not ported: at 0.08 ms per query and about a second at build time, there is nothing to gain.
+
+The first Rust version was no faster than TypeScript (139 ms). Profiling showed why: a linear scan over 170 stopwords for every word, an allocation per word, SipHash, and Unicode normalization of whole pages when one character was non-ASCII. The current version streams the text once, normalizes only non-ASCII characters, looks stopwords up in an Fx hash set, and stems each distinct word once per index.
+
+Other speedups: narration lines are voiced three at a time (`MIOTTS_CONCURRENCY`) instead of one after another, and `instrumentation.ts` warms the slow first-use steps when the server starts (probing Manim, which takes several seconds to import; loading the Rust core; embedding the library when an embedder is set), so the first question does not pay for them.
+
 ## Tests
 
 ```bash
 npm test
 ```
 
-The tests run the Opus and LFM3 paths against local mock servers (no keys or network), and check that every message the agent emits passes the A2UI `MessageProcessor`'s validation for the catalog. They also cover the reasoning-trace filter, the markdown sanitizer, PDF/Word/image parsing, upload retrieval, the Manim scene validator (which needs only `python3`), the MioTTS client against a mock of its API, the neural retrieval stages against mock embedding and rerank endpoints (including a dead endpoint), and the animation pipeline end to end against a mock Bonsai server (scene call with reasoning off, two repairs, storyboard fallback). The render tests run when `MANIM_PYTHON` points at a Python with Manim installed; they render the storyboard, the prompt's example scene, and a scene that uses old Manim names and a bad `narrate()` index.
+The tests run the Opus and LFM3 paths against local mock servers (no keys or network), and check that every message the agent emits passes the A2UI `MessageProcessor`'s validation for the catalog. They also cover the reasoning-trace filter, the markdown sanitizer, PDF/Word/image parsing, upload retrieval, the Manim scene validator (which needs only `python3`), the MioTTS client against a mock of its API, the neural retrieval stages against mock embedding and rerank endpoints (including a dead endpoint), and the animation pipeline end to end against a mock Bonsai server (scene call with reasoning off, two repairs, storyboard fallback). The render tests run when `MANIM_PYTHON` points at a Python with Manim installed; they render the storyboard, the prompt's example scene, and a scene that uses old Manim names and a bad `narrate()` index, and run the code shown in the chat with the Manim CLI. `tests/native-core.test.ts` checks the Rust core against the TypeScript tokenizer and BM25.
 
 ## Deploy on Vercel
 
@@ -264,6 +294,9 @@ lib/rag/                    tokenizer, LSA, e-means, IVF + BM25, neural embeddin
 lib/uploads/                file parsing (PDF, Word, text, images), scanned-PDF transcription and upload retrieval
 lib/manim/render.ts         Manim render service (sandbox, queue, cleanup)
 lib/manim/storyboard.ts     storyboard scene built from an answer (the animation fallback)
+lib/native/                 the Rust core as WebAssembly, and its loader
+crates/lemmaslop-core/      Rust: tokenizer, stemmer, BM25 index
+bench/                      retrieval benchmarks and the embedding evaluation
 lib/tts/miotts.ts           MioTTS-0.6B narration client
 scripts/manim_runner.py     validates and renders one scene
 lib/a2ui/catalog-api.ts     the math component catalog (Zod schemas)

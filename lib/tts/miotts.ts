@@ -111,33 +111,37 @@ async function speak(url: string, text: string, signal?: AbortSignal): Promise<B
   return Buffer.from(await res.arrayBuffer());
 }
 
+/** Lines voiced at once. MioTTS's llama-server batches them (--cont-batching). */
+const CONCURRENCY = Math.max(1, Number(process.env.MIOTTS_CONCURRENCY) || 3);
+
 /**
- * Synthesizes each line in order. A line that fails falls back to silence
- * with an estimated duration, so the scene still renders and captions still
- * line up.
+ * Synthesizes the lines, up to MIOTTS_CONCURRENCY (default 3) at a time, and
+ * returns them in order. A line that fails falls back to silence with an
+ * estimated duration, so the scene still renders and captions still line up.
  */
 export async function synthesize(lines: string[], signal?: AbortSignal): Promise<{lines: VoiceLine[]; voiced: number}> {
   const url = (await ttsAvailable()) ? ttsUrl() : null;
-  const out: VoiceLine[] = [];
-  let voiced = 0;
-  for (const raw of lines) {
+  const out: VoiceLine[] = lines.map((raw) => {
     const text = speakable(raw);
-    let wav: Buffer | null = null;
-    let duration = estimateSeconds(text);
-    if (url && text && !signal?.aborted) {
+    return {text, duration: estimateSeconds(text), wav: null};
+  });
+  let next = 0;
+  const worker = async () => {
+    while (next < out.length) {
+      const line = out[next++];
+      if (!url || !line.text || signal?.aborted) continue;
       try {
-        wav = await speak(url, text, signal);
+        const wav = await speak(url, line.text, signal);
         const measured = wavSeconds(wav);
         if (measured && measured > 0.2) {
-          duration = Math.round(measured * 1000) / 1000;
-          voiced++;
-        } else wav = null;
+          line.wav = wav;
+          line.duration = Math.round(measured * 1000) / 1000;
+        }
       } catch (error) {
         console.warn('[lemmaslop] MioTTS line failed', error instanceof Error ? error.message : error);
-        wav = null;
       }
     }
-    out.push({text, duration, wav});
-  }
-  return {lines: out, voiced};
+  };
+  await Promise.all(Array.from({length: Math.min(CONCURRENCY, out.length)}, worker));
+  return {lines: out, voiced: out.filter((l) => l.wav).length};
 }

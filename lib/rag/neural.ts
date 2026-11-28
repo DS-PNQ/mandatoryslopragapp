@@ -1,8 +1,10 @@
 // Optional neural retrieval: a dense embedding model and a cross-encoder
 // reranker, both served by llama-server's OpenAI-compatible API.
 //
-//   embeddings: llama-server -hf Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0 --embedding --pooling last -ub 8192
-//               -> LEMMA_EMBED_URL=http://127.0.0.1:8097/v1
+//   embeddings: llama-server -hf ggml-org/embeddinggemma-2-GGUF:Q8_0 --embedding --pooling mean -ub 8192
+//               -> LEMMA_EMBED_URL=http://127.0.0.1:8097/v1, LEMMA_EMBED_MODEL=embeddinggemma-2
+//           or: llama-server -hf Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0 --embedding --pooling last -ub 8192
+//               -> LEMMA_EMBED_URL=http://127.0.0.1:8097/v1 (LEMMA_EMBED_MODEL defaults to qwen3-embedding-0.6b)
 //   reranker:   llama-server -hf ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF --reranking -ub 8192
 //               -> LEMMA_RERANK_URL=http://127.0.0.1:8098/v1
 //
@@ -11,8 +13,14 @@
 // stage off for a minute, so a dead endpoint never blocks an answer.
 //
 // Choices, from the retrieval literature this follows:
-// - Qwen3-Embedding is instruction-aware; queries carry a task instruction and
-//   passages do not (the model card reports 1-5% lower retrieval without it).
+// - Both supported embedders are asymmetric and want their own prompts
+//   (LEMMA_EMBED_PROMPTS, else inferred from the model name):
+//     qwen3: "Instruct: <task>\nQuery: <q>" for queries, passages bare (the
+//            model card reports 1-5% lower retrieval without the instruction);
+//     gemma: "task: question answering | query: <q>" for queries and
+//            "title: <title> | text: <passage>" for passages (EmbeddingGemma 2).
+// - LEMMA_EMBED_DIM truncates vectors (Matryoshka) and renormalizes them; both
+//   models are trained for it (EmbeddingGemma 2: 768/512/256/128).
 // - Passages are embedded with a context header (note and section, or file and
 //   page), the cheap form of "contextual retrieval": a chunk that says "the
 //   series converges" is embedded knowing which series.
@@ -44,6 +52,27 @@ function endpoint(urlVar: string, modelVar: string, fallbackModel: string): Endp
   const baseUrl = process.env[urlVar]?.trim().replace(/\/+$/, '');
   if (!baseUrl) return null;
   return {baseUrl, model: process.env[modelVar]?.trim() || fallbackModel, apiKey: process.env.LEMMA_RETRIEVAL_API_KEY || undefined};
+}
+
+export type EmbedFamily = 'qwen3' | 'gemma' | 'plain';
+
+/** Prompt format for the configured embedder. */
+export function embedFamily(): EmbedFamily {
+  const set = process.env.LEMMA_EMBED_PROMPTS?.trim().toLowerCase();
+  if (set === 'qwen3' || set === 'gemma' || set === 'plain') return set;
+  const model = embedConfig()?.model ?? '';
+  return /gemma/i.test(model) ? 'gemma' : /qwen/i.test(model) ? 'qwen3' : 'plain';
+}
+
+/** Matryoshka truncation length, or 0 for the model's full vector. */
+function embedDim(): number {
+  const n = Number(process.env.LEMMA_EMBED_DIM);
+  return Number.isInteger(n) && n >= 32 ? n : 0;
+}
+
+/** EmbeddingGemma 2 query task; "question answering" fits questions best (bench/embed-eval.ts). */
+function gemmaTask(): string {
+  return process.env.LEMMA_EMBED_GEMMA_TASK?.trim() || 'question answering';
 }
 
 export function embedConfig(): Endpoint | null {
@@ -105,15 +134,26 @@ export function verbalizeTex(text: string): string {
 
 /** The text a passage is embedded as: its context, then its words. */
 export function passageForEmbedding(context: string, text: string): string {
-  return `${context}\n${verbalizeTex(text)}`.slice(0, 6000);
+  const body = verbalizeTex(text);
+  const out = embedFamily() === 'gemma' ? `title: ${context.replace(/\|/g, '/')} | text: ${body}` : `${context}\n${body}`;
+  return out.slice(0, 6000);
 }
 
-function queryForEmbedding(question: string): string {
-  return `Instruct: ${QUERY_INSTRUCTION}\nQuery: ${verbalizeTex(question)}`;
+export function queryForEmbedding(question: string): string {
+  const q = verbalizeTex(question);
+  switch (embedFamily()) {
+    case 'gemma':
+      return `task: ${gemmaTask()} | query: ${q}`;
+    case 'qwen3':
+      return `Instruct: ${QUERY_INSTRUCTION}\nQuery: ${q}`;
+    default:
+      return q;
+  }
 }
 
 function normalise(v: number[]): Float32Array {
-  const out = Float32Array.from(v);
+  const dim = embedDim();
+  const out = Float32Array.from(dim && dim < v.length ? v.slice(0, dim) : v);
   let n = 0;
   for (const x of out) n += x * x;
   n = Math.sqrt(n) || 1;
@@ -126,7 +166,7 @@ const cache = new Map<string, Float32Array>();
 const CACHE_MAX = 20_000;
 
 function key(model: string, text: string): string {
-  return createHash('sha1').update(model).update('\0').update(text).digest('hex');
+  return createHash('sha1').update(model).update('\0').update(String(embedDim())).update('\0').update(text).digest('hex');
 }
 
 async function embedRaw(ep: Endpoint, inputs: string[], signal?: AbortSignal): Promise<Float32Array[]> {

@@ -160,3 +160,17 @@ test('old Manim names, MathTex without LaTeX and a bad narrate index still rende
   assert.match(vtt, /first line/);
   assert.match(vtt, /second line, never called/);
 });
+
+import {standaloneScene} from '../lib/manim/render';
+
+test('the scene shown in the chat runs on its own with the manim CLI', {skip: !hasManim && 'Manim is not installed (set MANIM_PYTHON)', timeout: 300_000}, () => {
+  const draft = parseSceneReply(sceneExample(false))!;
+  const shown = standaloneScene(draft.code, draft.narration);
+  assert.match(shown, /^def narrate\(scene, i\):/m);
+  assert.equal(standaloneScene(shown, draft.narration), shown, 'idempotent');
+  assert.equal(standaloneScene('from manim import *\nclass A(Scene):\n    pass\n'), 'from manim import *\nclass A(Scene):\n    pass\n');
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'lemmaslop-cli-'));
+  writeFileSync(path.join(dir, 'scene.py'), shown);
+  const r = spawnSync(PY, ['-m', 'manim', '-ql', '--disable_caching', '--media_dir', dir, 'scene.py', 'GeometricSums'], {cwd: dir, encoding: 'utf8', timeout: 240_000});
+  assert.equal(r.status, 0, (r.stderr || r.stdout).slice(-1500));
+});

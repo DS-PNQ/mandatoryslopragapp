@@ -212,8 +212,15 @@ TEX_GLYPHS = {
     "in": "∈", "subset": "⊂", "cup": "∪", "cap": "∩", "forall": "∀", "exists": "∃", "pm": "±", "sqrt": "√",
     "ldots": "…", "cdots": "⋯", "langle": "⟨", "rangle": "⟩", "mid": "|", "circ": "∘", "perp": "⊥",
 }
-SUPERSCRIPT = str.maketrans("0123456789+-=()nijk", "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ⁿⁱʲᵏ")
-SUBSCRIPT = str.maketrans("0123456789+-=()aeijknx", "₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎ₐₑᵢⱼₖₙₓ")
+SUPERSCRIPT = str.maketrans("0123456789+-=()abcdefghijklmnoprstuvwxyzABDEGHIJKLMNOPRTUVW", "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ᵃᵇᶜᵈᵉᶠᵍʰⁱʲᵏˡᵐⁿᵒᵖʳˢᵗᵘᵛʷˣʸᶻᴬᴮᴰᴱᴳᴴᴵᴶᴷᴸᴹᴺᴼᴾᴿᵀᵁⱽᵂ")
+SUBSCRIPT = str.maketrans("0123456789+-=()aehijklmnoprstuvx", "₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓ")
+
+
+def script(s: str, table: dict, mark: str) -> str:
+    """Unicode super/subscript when every character has one, else ^x / _(xy)."""
+    if all(ord(c) in table for c in s):
+        return s.translate(table)
+    return mark + (s if len(s) == 1 else f"({s})")
 
 
 def group(s: str) -> str:
@@ -229,8 +236,8 @@ def tex_to_text(tex: str) -> str:
     s = re.sub(r"\\(?:mathbb|mathbf|mathrm|mathcal|text|operatorname|boldsymbol)\{([^{}]*)\}", r"\1", s)
     s = re.sub(r"\\(left|right|displaystyle|limits|quad|qquad|,|;|!)", " ", s)
     s = re.sub(r"\\([A-Za-z]+)", lambda m: TEX_GLYPHS.get(m.group(1), m.group(1)), s)
-    s = re.sub(r"\^\{([^{}]*)\}|\^(\w)", lambda m: (m.group(1) or m.group(2)).translate(SUPERSCRIPT), s)
-    s = re.sub(r"_\{([^{}]*)\}|_(\w)", lambda m: (m.group(1) or m.group(2)).translate(SUBSCRIPT), s)
+    s = re.sub(r"\^\{([^{}]*)\}|\^(\w)", lambda m: script(m.group(1) or m.group(2), SUPERSCRIPT, "^"), s)
+    s = re.sub(r"_\{([^{}]*)\}|_(\w)", lambda m: script(m.group(1) or m.group(2), SUBSCRIPT, "_"), s)
     s = s.replace("{", "").replace("}", "").replace("\\", " ").replace("&", " ")
     return re.sub(r"\s+", " ", s).strip() or tex
 

@@ -8,7 +8,7 @@
 // With no embedding or rerank server configured this is exactly the old
 // pipeline, so the app still runs anywhere (Vercel, a laptop, the tests).
 
-import {rankUploads, chunkAttachment, sendsWhole, type Attachment, type RankedUploadChunk} from '../uploads/retrieve';
+import {rankUploads, sendsWhole, uploadSelection, type Attachment, type RankedUploadChunk} from '../uploads/retrieve';
 import {getRetriever} from './load';
 import {denseRanking, embedConfig, embedPassages, embedQuery, passageForEmbedding, rerankConfig, rerankOrder} from './neural';
 import type {RetrievalResult} from './retrieve';
@@ -36,6 +36,16 @@ function libraryEmbeddings(signal?: AbortSignal): Promise<Float32Array[] | null>
     return v;
   });
   return libraryVectors;
+}
+
+/** For tests and the evaluation: forget the embedded library. */
+export function resetLibraryEmbeddings() {
+  libraryVectors = null;
+}
+
+/** Embeds the library ahead of the first question (called at server start). */
+export async function warmLibraryEmbeddings(): Promise<void> {
+  await libraryEmbeddings();
 }
 
 export async function searchLibrary(
@@ -92,7 +102,7 @@ export async function searchUploads(
 
   let candidates = lexical;
   if (embedConfig()) {
-    const chunks = attachments.flatMap(chunkAttachment);
+    const chunks = uploadSelection(attachments).chunks;
     const [q, vectors] = await Promise.all([
       embedQuery(question, signal),
       embedPassages(chunks.map((c) => passageForEmbedding(`${c.sourceName}, ${c.heading}`, c.text)), signal),

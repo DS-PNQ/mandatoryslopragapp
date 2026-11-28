@@ -9,3 +9,6 @@ next-env.d.ts
 .vercel
 __pycache__/
 *.pyc
+
+# Rust build output
+crates/*/target/

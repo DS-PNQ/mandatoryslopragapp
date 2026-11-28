@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type {AnimationEntry, SourceEntry, TraceEntry} from '../a2ui/catalog-api';
-import {extractCode, getManimStatus, renderScene, type ManimStatus, type RenderResult} from '../manim/render';
+import {extractCode, getManimStatus, renderScene, standaloneScene, type ManimStatus, type RenderResult} from '../manim/render';
 import {storyboardFromBlocks, storyboardScene} from '../manim/storyboard';
 import {searchLibrary, searchUploads, type NeuralTrace} from '../rag/hybrid';
 import {getIndex} from '../rag/load';
@@ -482,7 +482,15 @@ const MAX_REPAIRS = Math.max(0, Number(process.env.LEMMA_MANIM_REPAIRS ?? 2));
  *   4. if it still fails, a storyboard of the answer is rendered instead.
  */
 async function produceAnimation(ctx: AnimationContext, draft: SceneDraft | null): Promise<void> {
-  const {id, engine, manim, writer, signal} = ctx;
+  const {id, engine, manim, signal} = ctx;
+  // Every state shows the scene in its standalone form (with a narrate()
+  // stand-in), so "Copy code" and "run it yourself" work outside the app.
+  let spoken: string[] = draft?.narration ?? [];
+  const writer = {
+    retitle: (blockId: string, title: string) => ctx.writer.retitle(blockId, title),
+    animation: (blockId: string, entry: AnimationEntry) =>
+      ctx.writer.animation(blockId, {...entry, code: standaloneScene(entry.code, entry.narration ?? spoken)}),
+  };
   if (!draft) {
     draft = await writeScene(ctx).catch((e) => {
       console.warn('[lemmaslop] scene writing failed', e);
@@ -506,6 +514,7 @@ async function produceAnimation(ctx: AnimationContext, draft: SceneDraft | null)
       voice = lines.map((t) => ({text: speakable(t), duration: estimateSeconds(speakable(t)), wav: null}));
       voiced = 0;
     }
+    spoken = voice.map((v) => v.text);
   };
 
   let result: RenderResult | null = null;
@@ -545,6 +554,8 @@ async function produceAnimation(ctx: AnimationContext, draft: SceneDraft | null)
       result = boardResult;
       code = boardCode;
       fallback = boardResult.ok;
+      // The card showed the failed scene's title; name what is actually shown.
+      if (boardResult.ok) writer.retitle(ctx.id, board.title);
     }
   }
 
