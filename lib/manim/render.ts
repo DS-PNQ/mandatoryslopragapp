@@ -222,3 +222,32 @@ export function extractCode(text: string): string | null {
   const code = (fence ? fence[1] : text).trim();
   return /class\s+\w+\s*\(/.test(code) ? code : null;
 }
+
+/**
+ * The scene as the user sees and copies it: runnable on its own with
+ * `manim -pql scene.py`. Scenes call narrate(self, i), which only the app's
+ * runner defines, so a stand-in is added after the imports that returns each
+ * line's estimated length (the runner adds the voice instead).
+ */
+export function standaloneScene(code: string, narration: string[] = []): string {
+  if (!code || !/\bnarrate\s*\(/.test(code) || /^def narrate\(/m.test(code)) return code;
+  const lines = code.split('\n');
+  let at = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^(from \S+ import |import )/.test(lines[i])) at = i + 1;
+    else if (lines[i].trim() && !lines[i].startsWith('#')) break;
+  }
+  const shim = [
+    '',
+    '# LemmaSlop voices these lines and calls narrate(self, i) when line i starts.',
+    '# Run locally, narrate just returns the line\'s estimated length in seconds.',
+    `NARRATION = [${narration.map((l) => JSON.stringify(l)).join(', ')}]`,
+    '',
+    '',
+    'def narrate(scene, i):',
+    '    words = len(NARRATION[i].split()) if 0 <= i < len(NARRATION) else 5',
+    '    return max(1.2, words / 2.6 + 0.4)',
+    '',
+  ];
+  return [...lines.slice(0, at), ...shim, ...lines.slice(at)].join('\n');
+}

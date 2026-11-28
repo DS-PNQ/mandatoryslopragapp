@@ -71,7 +71,7 @@ test('a requested animation is written separately, repaired, and falls back to a
     // Video above the follow-ups.
     assert.ok(types.indexOf('Animation') >= 0 && types.indexOf('Animation') < types.indexOf('FollowUps'), types.join(','));
     const animId = body[types.indexOf('Animation')];
-    assert.equal(surface.componentsModel.get(animId)?.properties.title, 'Partial sums climbing to a limit');
+    if (!hasManim) assert.equal(surface.componentsModel.get(animId)?.properties.title, 'Partial sums climbing to a limit');
     const entry = surface.dataModel.get(`/anims/${animId}`) as any;
 
     if (hasManim) {
@@ -79,6 +79,8 @@ test('a requested animation is written separately, repaired, and falls back to a
       assert.equal(entry.status, 'ready', entry.message);
       assert.equal(entry.fallback, true);
       assert.match(entry.code, /class AnswerStoryboard/);
+      // The card is renamed after the storyboard, not the failed scene.
+      assert.equal(surface.componentsModel.get(animId)?.properties.title, 'Why the geometric series converges');
       // The model gave two lines for its own scene; the storyboard speaks one per beat.
       assert.ok(entry.narration.length >= 3, JSON.stringify(entry.narration));
     } else {

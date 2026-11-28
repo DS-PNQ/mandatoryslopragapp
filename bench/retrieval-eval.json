@@ -1,0 +1,320 @@
+[
+ {
+  "q": "Why does the sum of r^n converge only when the ratio is smaller than one in absolute value?",
+  "gold": [
+   "series#geometric-series"
+  ]
+ },
+ {
+  "q": "Does 1 + 1/2 + 1/3 + ... converge?",
+  "gold": [
+   "series#divergence-test-and-the-harmonic-series"
+  ]
+ },
+ {
+  "q": "For which exponents does \\sum 1/n^p converge?",
+  "gold": [
+   "series#p-series-and-the-integral-test"
+  ]
+ },
+ {
+  "q": "How can I show a series converges by bounding it with a bigger one?",
+  "gold": [
+   "series#comparison-tests"
+  ]
+ },
+ {
+  "q": "What does \\lim |a_{n+1}/a_n| tell me about convergence?",
+  "gold": [
+   "series#ratio-and-root-tests"
+  ]
+ },
+ {
+  "q": "If the signs alternate and the terms shrink to zero, does the sum converge?",
+  "gold": [
+   "series#alternating-series-and-absolute-convergence"
+  ]
+ },
+ {
+  "q": "How do I approximate sin x near zero with a polynomial and bound the error?",
+  "gold": [
+   "taylor#taylor-s-theorem",
+   "taylor#standard-maclaurin-series"
+  ]
+ },
+ {
+  "q": "Within what interval does a power series converge?",
+  "gold": [
+   "taylor#radius-of-convergence"
+  ]
+ },
+ {
+  "q": "Why is e^{i\\theta} = \\cos\\theta + i\\sin\\theta?",
+  "gold": [
+   "taylor#euler-s-formula-from-power-series",
+   "complex-analysis#complex-numbers-and-polar-form"
+  ]
+ },
+ {
+  "q": "When can a matrix be written as P D P^{-1}?",
+  "gold": [
+   "linear-algebra-spectral#diagonalization"
+  ]
+ },
+ {
+  "q": "Are the eigenvalues of a real symmetric matrix always real, with orthogonal eigenvectors?",
+  "gold": [
+   "linear-algebra-spectral#spectral-theorem"
+  ]
+ },
+ {
+  "q": "How do I find the best-fit line when Ax=b has no exact solution?",
+  "gold": [
+   "linear-algebra-spectral#least-squares-and-projections"
+  ]
+ },
+ {
+  "q": "Factor any matrix into U \\Sigma V^T",
+  "gold": [
+   "linear-algebra-spectral#singular-value-decomposition"
+  ]
+ },
+ {
+  "q": "How do I turn a basis into an orthonormal one?",
+  "gold": [
+   "linear-algebra-spectral#inner-products-and-gram-schmidt"
+  ]
+ },
+ {
+  "q": "Dimension of the kernel plus dimension of the image",
+  "gold": [
+   "linear-algebra-foundations#linear-maps-and-the-rank-nullity-theorem"
+  ]
+ },
+ {
+  "q": "When is a square matrix invertible and how do I compute its inverse?",
+  "gold": [
+   "linear-algebra-foundations#inverse-of-a-matrix",
+   "linear-algebra-foundations#determinants"
+  ]
+ },
+ {
+  "q": "Probability of A given B, and how to flip the conditioning",
+  "gold": [
+   "probability#conditional-probability-and-bayes-theorem"
+  ]
+ },
+ {
+  "q": "Why does the average of many independent samples look normally distributed?",
+  "gold": [
+   "probability#law-of-large-numbers-and-central-limit-theorem"
+  ]
+ },
+ {
+  "q": "How do I pick parameters that make the observed data most probable?",
+  "gold": [
+   "statistics#maximum-likelihood"
+  ]
+ },
+ {
+  "q": "What does it mean to reject the null hypothesis at the 5% level?",
+  "gold": [
+   "statistics#hypothesis-testing-and-p-values"
+  ]
+ },
+ {
+  "q": "Is the sample variance with n in the denominator unbiased?",
+  "gold": [
+   "statistics#estimators-bias-and-variance"
+  ]
+ },
+ {
+  "q": "Integrate x e^x",
+  "gold": [
+   "integration#integration-by-parts"
+  ]
+ },
+ {
+  "q": "How do I integrate a rational function like 1/(x^2-1)?",
+  "gold": [
+   "integration#partial-fractions"
+  ]
+ },
+ {
+  "q": "Is \\int_1^\\infty 1/x^2 dx finite?",
+  "gold": [
+   "integration#improper-integrals",
+   "series#p-series-and-the-integral-test"
+  ]
+ },
+ {
+  "q": "Why is differentiation the inverse of integration?",
+  "gold": [
+   "integration#fundamental-theorem-of-calculus"
+  ]
+ },
+ {
+  "q": "Limit of a 0/0 form by differentiating the top and the bottom",
+  "gold": [
+   "derivatives#l-hopital-s-rule"
+  ]
+ },
+ {
+  "q": "How do I find the maximum and minimum of a function on an interval?",
+  "gold": [
+   "derivatives#optimization-and-critical-points",
+   "continuity#extreme-value-theorem"
+  ]
+ },
+ {
+  "q": "If f(a) = f(b) there is a point where the slope is zero",
+  "gold": [
+   "derivatives#rolle-s-theorem-and-the-mean-value-theorem"
+  ]
+ },
+ {
+  "q": "If a continuous function changes sign it must hit zero",
+  "gold": [
+   "continuity#intermediate-value-theorem"
+  ]
+ },
+ {
+  "q": "Closed and bounded subsets of R^n are compact",
+  "gold": [
+   "continuity#compactness-and-the-heine-borel-theorem"
+  ]
+ },
+ {
+  "q": "Maximise f(x,y) subject to g(x,y) = 0",
+  "gold": [
+   "multivariable#lagrange-multipliers"
+  ]
+ },
+ {
+  "q": "How do I classify a critical point of f(x,y) using the Hessian?",
+  "gold": [
+   "multivariable#second-derivative-test-in-two-variables"
+  ]
+ },
+ {
+  "q": "Solve y'' + 3y' + 2y = 0",
+  "gold": [
+   "differential-equations#second-order-linear-equations-with-constant-coefficients"
+  ]
+ },
+ {
+  "q": "dy/dx = xy: how do I solve it by separating variables?",
+  "gold": [
+   "differential-equations#separable-equations"
+  ]
+ },
+ {
+  "q": "Use an integrating factor to solve y' + p(x) y = q(x)",
+  "gold": [
+   "differential-equations#first-order-linear-equations"
+  ]
+ },
+ {
+  "q": "The order of a subgroup divides the order of the group",
+  "gold": [
+   "groups#subgroups-cosets-and-lagrange-s-theorem"
+  ]
+ },
+ {
+  "q": "Why is a^{p-1} \\equiv 1 \\pmod p?",
+  "gold": [
+   "number-theory#fermat-s-little-theorem-and-euler-s-theorem"
+  ]
+ },
+ {
+  "q": "Solve x = 2 mod 3 and x = 3 mod 5 at the same time",
+  "gold": [
+   "number-theory#chinese-remainder-theorem"
+  ]
+ },
+ {
+  "q": "Find integers x and y with ax + by = gcd(a, b)",
+  "gold": [
+   "number-theory#bezout-s-identity",
+   "number-theory#divisibility-and-the-euclidean-algorithm"
+  ]
+ },
+ {
+  "q": "Prove a statement for every natural number with a base case and a step",
+  "gold": [
+   "proof-techniques#mathematical-induction"
+  ]
+ },
+ {
+  "q": "If n+1 pigeons go into n boxes, one box has two",
+  "gold": [
+   "combinatorics#pigeonhole-principle"
+  ]
+ },
+ {
+  "q": "Count the elements in a union of overlapping sets",
+  "gold": [
+   "combinatorics#inclusion-exclusion"
+  ]
+ },
+ {
+  "q": "Expand (x+y)^n",
+  "gold": [
+   "combinatorics#binomial-theorem"
+  ]
+ },
+ {
+  "q": "Evaluate a real integral using poles and residues",
+  "gold": [
+   "complex-analysis#residue-theorem"
+  ]
+ },
+ {
+  "q": "When is a complex function differentiable? u_x = v_y and u_y = -v_x",
+  "gold": [
+   "complex-analysis#holomorphic-functions-and-the-cauchy-riemann-equations"
+  ]
+ },
+ {
+  "q": "Why is \\sum 1/n^2 = \\pi^2/6?",
+  "gold": [
+   "fourier#a-worked-example-and-the-basel-sum"
+  ]
+ },
+ {
+  "q": "How fast does gradient descent converge on a smooth convex function?",
+  "gold": [
+   "convex-optimization#gradient-descent-and-convergence-rates"
+  ]
+ },
+ {
+  "q": "f(E[X]) <= E[f(X)] for convex f",
+  "gold": [
+   "convex-optimization#jensen-s-inequality"
+  ]
+ },
+ {
+  "q": "How does merging two ranked lists with 1/(k + rank) work?",
+  "gold": [
+   "nearest-neighbor-search#hybrid-ranking-with-reciprocal-rank-fusion"
+  ]
+ },
+ {
+  "q": "Why do empty clusters get split in e-means?",
+  "gold": [
+   "clustering-emeans#dead-cluster-revival-by-splitting"
+  ]
+ },
+ {
+  "q": "A bounded increasing sequence has a limit",
+  "gold": [
+   "sequences-limits#monotone-convergence-theorem"
+  ]
+ },
+ {
+  "q": "If a sequence is trapped between two sequences with the same limit",
+  "gold": [
+   "sequences-limits#squeeze-theorem"
+  ]
+ }
+]

@@ -10,7 +10,10 @@
     "build": "npm run index && next build",
     "start": "next start",
     "test": "tsx --test tests/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:native": "cargo build --release --target wasm32-unknown-unknown --manifest-path crates/lemmaslop-core/Cargo.toml && cp crates/lemmaslop-core/target/wasm32-unknown-unknown/release/lemmaslop_core.wasm lib/native/",
+    "test:native": "cargo test --release --manifest-path crates/lemmaslop-core/Cargo.toml",
+    "bench": "tsx bench/retrieval.bench.ts"
   },
   "engines": {
     "node": ">=20"

@@ -1,17 +1,22 @@
 // Hybrid retrieval with optional neural stages (see lib/rag/neural.ts):
 //
-//   library:  LSA + e-means IVF (dense) + BM25 (lexical) + neural embeddings,
-//             fused with RRF into 20 candidates, then reranked by the
-//             cross-encoder down to k.
-//   uploads:  BM25 + neural embeddings fused with RRF, then reranked.
+//   library:  neural embeddings decide the order; LSA + e-means IVF and BM25
+//             only break ties and backfill (weighted RRF, NEURAL_FUSION in
+//             retrieve.ts) into 20 candidates, then the cross-encoder reranks
+//             them down to k. Without an embedder, LSA and BM25 are fused
+//             with equal weights as before.
+//   uploads:  the same, with BM25 as the lexical list.
+//
+// Why dense-first: on bench/retrieval-eval.json (52 questions) equal-weight
+// fusion cut Qwen3-Embedding's hit@1 from 92% to 69%; see bench/fusion-eval.ts.
 //
 // With no embedding or rerank server configured this is exactly the old
 // pipeline, so the app still runs anywhere (Vercel, a laptop, the tests).
 
-import {rankUploads, chunkAttachment, sendsWhole, type Attachment, type RankedUploadChunk} from '../uploads/retrieve';
+import {rankUploads, sendsWhole, uploadSelection, type Attachment, type RankedUploadChunk} from '../uploads/retrieve';
 import {getRetriever} from './load';
 import {denseRanking, embedConfig, embedPassages, embedQuery, passageForEmbedding, rerankConfig, rerankOrder} from './neural';
-import type {RetrievalResult} from './retrieve';
+import {neuralFusion, type RetrievalResult} from './retrieve';
 
 const CANDIDATES = 20;
 const RRF_K = 60;
@@ -38,6 +43,16 @@ function libraryEmbeddings(signal?: AbortSignal): Promise<Float32Array[] | null>
   return libraryVectors;
 }
 
+/** For tests and the evaluation: forget the embedded library. */
+export function resetLibraryEmbeddings() {
+  libraryVectors = null;
+}
+
+/** Embeds the library ahead of the first question (called at server start). */
+export async function warmLibraryEmbeddings(): Promise<void> {
+  await libraryEmbeddings();
+}
+
 export async function searchLibrary(
   query: string,
   k: number,
@@ -53,7 +68,7 @@ export async function searchLibrary(
       neural.embedder = embedConfig()!.model;
     }
   }
-  const wide = retriever.search(query, rerankConfig() ? CANDIDATES : k, undefined, ranking);
+  const wide = retriever.search(query, rerankConfig() ? CANDIDATES : k, undefined, ranking, ranking ? neuralFusion() : undefined);
   if (wide.passages.length > 1 && rerankConfig()) {
     const reranked = await rerankOrder(
       query,
@@ -92,13 +107,15 @@ export async function searchUploads(
 
   let candidates = lexical;
   if (embedConfig()) {
-    const chunks = attachments.flatMap(chunkAttachment);
+    const chunks = uploadSelection(attachments).chunks;
     const [q, vectors] = await Promise.all([
       embedQuery(question, signal),
       embedPassages(chunks.map((c) => passageForEmbedding(`${c.sourceName}, ${c.heading}`, c.text)), signal),
     ]);
     if (q && vectors) {
       neural.embedder = embedConfig()!.model;
+      // Same weighting as the library: the dense order decides, BM25 backfills.
+      const w = neuralFusion();
       const fused = new Map<number, number>();
       const keyOf = (c: {sourceId: string; heading: string}) => `${c.sourceId}\0${c.heading}`;
       const indexOf = new Map(chunks.map((c, i) => [keyOf(c), i]));
@@ -106,9 +123,9 @@ export async function searchUploads(
         .filter((c) => c.rank !== null)
         .forEach((c, r) => {
           const i = indexOf.get(keyOf(c));
-          if (i !== undefined) fused.set(i, (fused.get(i) ?? 0) + 1 / (RRF_K + r + 1));
+          if (i !== undefined) fused.set(i, (fused.get(i) ?? 0) + w.bm25 / (RRF_K + r + 1));
         });
-      denseRanking(q, vectors, CANDIDATES).forEach(({index}, r) => fused.set(index, (fused.get(index) ?? 0) + 1 / (RRF_K + r + 1)));
+      denseRanking(q, vectors, CANDIDATES).forEach(({index}, r) => fused.set(index, (fused.get(index) ?? 0) + w.neural / (RRF_K + r + 1)));
       candidates = [...fused.entries()]
         .sort((a, b) => b[1] - a[1])
         .slice(0, CANDIDATES)

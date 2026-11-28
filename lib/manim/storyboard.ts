@@ -30,7 +30,9 @@ function plain(md: string): string {
   return md
     .replace(/\$\$([\s\S]*?)\$\$/g, ' $1 ')
     .replace(/\[(\d+)\]/g, '')
-    .replace(/[*_`#>]/g, '')
+    .replace(/[*`#>]/g, '')
+    // Underscores as markdown emphasis go; S_N (a subscript) stays.
+    .replace(/(^|\s)_+|_+(?=[\s.,;:!?)]|$)/g, '$1')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -48,12 +50,13 @@ const GLYPHS: Record<string, string> = {
   leq: '≤', ge: '≥', geq: '≥', neq: '≠', approx: '≈', to: '→', rightarrow: '→', Rightarrow: '⇒', in: '∈',
   forall: '∀', exists: '∃', pm: '±', ldots: '…', cdots: '⋯', mid: '|',
 };
-const SUP: Record<string, string> = {'0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹', '+': '⁺', '-': '⁻', n: 'ⁿ', i: 'ⁱ', k: 'ᵏ'};
-const SUB: Record<string, string> = {'0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄', '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉', '+': '₊', '-': '₋', n: 'ₙ', i: 'ᵢ', j: 'ⱼ', k: 'ₖ', x: 'ₓ'};
+const SUP: Record<string, string> = {'0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹', '+': '⁺', '-': '⁻', '=': '⁼', '(': '⁽', ')': '⁾', 'a': 'ᵃ', 'b': 'ᵇ', 'c': 'ᶜ', 'd': 'ᵈ', 'e': 'ᵉ', 'f': 'ᶠ', 'g': 'ᵍ', 'h': 'ʰ', 'i': 'ⁱ', 'j': 'ʲ', 'k': 'ᵏ', 'l': 'ˡ', 'm': 'ᵐ', 'n': 'ⁿ', 'o': 'ᵒ', 'p': 'ᵖ', 'r': 'ʳ', 's': 'ˢ', 't': 'ᵗ', 'u': 'ᵘ', 'v': 'ᵛ', 'w': 'ʷ', 'x': 'ˣ', 'y': 'ʸ', 'z': 'ᶻ', 'A': 'ᴬ', 'B': 'ᴮ', 'D': 'ᴰ', 'E': 'ᴱ', 'G': 'ᴳ', 'H': 'ᴴ', 'I': 'ᴵ', 'J': 'ᴶ', 'K': 'ᴷ', 'L': 'ᴸ', 'M': 'ᴹ', 'N': 'ᴺ', 'O': 'ᴼ', 'P': 'ᴾ', 'R': 'ᴿ', 'T': 'ᵀ', 'U': 'ᵁ', 'V': 'ⱽ', 'W': 'ᵂ'};
+const SUB: Record<string, string> = {'0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄', '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉', '+': '₊', '-': '₋', '=': '₌', '(': '₍', ')': '₎', 'a': 'ₐ', 'e': 'ₑ', 'h': 'ₕ', 'i': 'ᵢ', 'j': 'ⱼ', 'k': 'ₖ', 'l': 'ₗ', 'm': 'ₘ', 'n': 'ₙ', 'o': 'ₒ', 'p': 'ₚ', 'r': 'ᵣ', 's': 'ₛ', 't': 'ₜ', 'u': 'ᵤ', 'v': 'ᵥ', 'x': 'ₓ'};
 
 function script(s: string, map: Record<string, string>, mark: string): string {
   const all = [...s].every((c) => c in map);
-  return all ? [...s].map((c) => map[c]).join('') : `${mark}(${s})`;
+  if (all) return [...s].map((c) => map[c]).join('');
+  return `${mark}${s.length === 1 ? s : `(${s})`}`;
 }
 
 /** Inline LaTeX as Unicode text for the screen: "\frac{1}{1-r}" -> "1/(1-r)". */
@@ -147,7 +150,12 @@ export function storyboardFromBlocks(question: string, blocks: Block[], narratio
   }
 
   const lines = narration && narration.length >= beats.length ? narration.slice(0, beats.length) : said;
-  const title = firstSentence(question.replace(/<[^>]+>/g, ''), 60).replace(/[.?!]$/, '');
+  // "Animate why the series converges" -> "Why the series converges".
+  const asked = question
+    .replace(/<[^>]+>/g, '')
+    .replace(/^\s*(please\s+)?(can you\s+)?(animate|visuali[sz]e|illustrate|show( me)?|draw)\s+/i, '')
+    .trim();
+  const title = firstSentence(asked.charAt(0).toUpperCase() + asked.slice(1), 60).replace(/[.?!]$/, '');
   return {title, beats, narration: lines.map((s) => s.slice(0, 260))};
 }
 
@@ -205,7 +213,11 @@ ${beats}
             if tex:
                 box = SurroundingRectangle(group[0], color="#4cc2ff", buff=0.2, corner_radius=0.1)
                 self.play(Create(box), run_time=min(0.8, d * 0.2))
+                # Create() adds the box to the scene on its own; move it into the
+                # group so the next FadeOut(shown) takes it away too.
+                self.remove(box)
                 group.add(box)
+                self.add(group)
             self.wait(max(0.3, d - min(1.2, d * 0.4) - (min(0.8, d * 0.2) if tex else 0)))
             shown = group
         self.wait(0.6)

@@ -1,0 +1,20 @@
+[package]
+name = "lemmaslop-core"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "LemmaSlop's text core: tokenizer, stemmer and BM25 index, compiled to WebAssembly for the Node app"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+unicode-normalization = "0.1"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
