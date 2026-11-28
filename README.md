@@ -145,6 +145,7 @@ To decide between them for this app, `bench/embed-eval.ts` runs 52 student-style
 | Built-in only: LSA + e-means + BM25 | 61.5% | 86.5% | 92.3% | 0.702 | <1 ms | none |
 | Qwen3-Embedding, equal-weight fusion (previous version) | 69.2% | 90.4% | 100% | 0.781 | 153 ms | 34 s |
 | **Qwen3-Embedding, dense-first (now)** | **92.3%** | **100%** | 100% | **0.958** | 102 ms | 31 s |
+| Qwen3-Embedding, dense-first, then Qwen3-Reranker-0.6B | 94.2% | 100% | 100% | 0.971 | 10.8 s | 31 s |
 | EmbeddingGemma 2, equal-weight fusion | 59.6% | 92.3% | 100% | 0.728 | 22 ms | 12 s |
 | **EmbeddingGemma 2, dense-first (now)** | **76.9%** | **98.1%** | 100% | **0.851** | 25 ms | 12 s |
 | EmbeddingGemma 2 alone, "question answering" prompt | 75.0% | 98.1% | 100% | 0.835 | | |
@@ -155,6 +156,7 @@ What this says:
 - **Qwen3-Embedding retrieves better on maths.** It puts the right passage first 92% of the time against EmbeddingGemma 2's 77%; both have it in the top six almost always. With six passages going to the model, both work, but Qwen3's first passage is more often the one that matters.
 - **EmbeddingGemma 2 is the CPU and low-memory choice.** It is 4× faster per question and 2.7× faster at embedding the library on a CPU, at half the size. The Colab notebook uses it when Qwen3 does not fit on the GPU next to Bonsai.
 - **Fusion weights mattered more than the model.** The usual hybrid recipe, equal-weight RRF with BM25, lowered both models, since on these questions the lexical lists are much weaker than the dense one. `bench/fusion-eval.ts` swept the weights: any weight that let BM25 or LSA reorder the dense list lowered hit@1, and on 12 exact-term questions (theorem names, acronyms: `bench/retrieval-eval-terms.json`) adding BM25 and LSA at any weight changed nothing for either model (Qwen3 92% hit@1, equal to the lexical baseline; EmbeddingGemma 2 83%). So the dense order now decides.
+- **The reranker adds a little, at a cost on CPU.** Over Qwen3's dense ranking it fixed one more question (94.2% hit@1, MRR 0.971) but took 10.8 s per question to score 20 passages on 4 CPU threads, so the notebook starts it only on the GPU.
 - **Prompt and truncation.** EmbeddingGemma 2's "search result" prompt edged out "question answering" (MRR 0.851 vs 0.835) and is the default (`LEMMA_EMBED_GEMMA_TASK`). Truncating to 256 dimensions cost 6 points of hit@1 for no practical saving on a 110-passage library.
 
 Caveats: 52 questions is a small set (one question is about 2 points), the notes library is the only corpus measured, and uploads were not evaluated. Run it yourself with the servers above:
