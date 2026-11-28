@@ -37,20 +37,23 @@ const qwen = {LEMMA_EMBED_URL: Qw!, LEMMA_EMBED_MODEL: 'qwen3-embedding-0.6b'};
 
 const configs: Config[] = [
   {name: 'baseline: LSA + e-means + BM25', env: {}},
-  ...(Qw ? [{name: 'Qwen3-Embedding-0.6B alone', env: qwen, denseOnly: true}] : []),
-  ...(G ? [{name: 'EmbeddingGemma 2 alone (QA task)', env: gemma(), denseOnly: true}] : []),
-  ...(G ? [{name: 'EmbeddingGemma 2 alone (search task)', env: gemma({LEMMA_EMBED_GEMMA_TASK: 'search result'}), denseOnly: true}] : []),
-  ...(G ? [{name: 'EmbeddingGemma 2 alone, 256-d (QA)', env: gemma({LEMMA_EMBED_DIM: '256'}), denseOnly: true}] : []),
-  ...(Qw ? [{name: 'hybrid + Qwen3-Embedding', env: qwen}] : []),
-  ...(G ? [{name: 'hybrid + EmbeddingGemma 2 (QA)', env: gemma()}] : []),
-  ...(G ? [{name: 'hybrid + EmbeddingGemma 2 (search)', env: gemma({LEMMA_EMBED_GEMMA_TASK: 'search result'})}] : []),
-  ...(G ? [{name: 'hybrid + EmbeddingGemma 2, 256-d', env: gemma({LEMMA_EMBED_DIM: '256'})}] : []),
-  ...(R ? [{name: 'baseline + reranker', env: {LEMMA_RERANK_URL: R}}] : []),
-  ...(R && Qw ? [{name: 'hybrid + Qwen3-Embedding + reranker', env: {...qwen, LEMMA_RERANK_URL: R}}] : []),
-  ...(R && G ? [{name: 'hybrid + EmbeddingGemma 2 + reranker', env: {...gemma(), LEMMA_RERANK_URL: R}}] : []),
+  ...(Qw ? [{name: 'Qwen3-Embedding alone', env: qwen, denseOnly: true}] : []),
+  ...(G ? [{name: 'EmbeddingGemma 2 alone, QA task', env: gemma({LEMMA_EMBED_GEMMA_TASK: 'question answering'}), denseOnly: true}] : []),
+  ...(G ? [{name: 'EmbeddingGemma 2 alone, search task', env: gemma({LEMMA_EMBED_GEMMA_TASK: 'search result'}), denseOnly: true}] : []),
+  ...(G ? [{name: 'EmbeddingGemma 2 alone, search, 256-d', env: gemma({LEMMA_EMBED_GEMMA_TASK: 'search result', LEMMA_EMBED_DIM: '256'}), denseOnly: true}] : []),
+  ...(Qw ? [{name: 'app: Qwen3, equal-weight RRF (old)', env: {...qwen, LEMMA_FUSION_WEIGHTS: '1,1,1'}}] : []),
+  ...(Qw ? [{name: 'app: Qwen3, dense-first (new)', env: qwen}] : []),
+  ...(G ? [{name: 'app: EmbeddingGemma 2, equal-weight RRF (old)', env: {...gemma({LEMMA_EMBED_GEMMA_TASK: 'search result'}), LEMMA_FUSION_WEIGHTS: '1,1,1'}}] : []),
+  ...(G ? [{name: 'app: EmbeddingGemma 2, dense-first (new)', env: gemma({LEMMA_EMBED_GEMMA_TASK: 'search result'})}] : []),
+  ...(R && Qw ? [{name: 'app: Qwen3, dense-first + reranker', env: {...qwen, LEMMA_RERANK_URL: R}}] : []),
+  ...(R && G ? [{name: 'app: EmbeddingGemma 2, dense-first + reranker', env: {...gemma({LEMMA_EMBED_GEMMA_TASK: 'search result'}), LEMMA_RERANK_URL: R}}] : []),
 ];
 
-const KEYS = ['LEMMA_EMBED_URL', 'LEMMA_EMBED_MODEL', 'LEMMA_EMBED_DIM', 'LEMMA_EMBED_GEMMA_TASK', 'LEMMA_RERANK_URL'];
+// EVAL_ONLY="reranker" (a substring) runs only the matching configurations.
+const only = process.env.EVAL_ONLY?.toLowerCase();
+const selected = only ? configs.filter((c) => c.name.toLowerCase().includes(only)) : configs;
+
+const KEYS = ['LEMMA_EMBED_URL', 'LEMMA_EMBED_MODEL', 'LEMMA_EMBED_DIM', 'LEMMA_EMBED_GEMMA_TASK', 'LEMMA_RERANK_URL', 'LEMMA_FUSION_WEIGHTS'];
 
 async function rankedIds(cfg: Config, q: string): Promise<string[]> {
   if (cfg.denseOnly) {
@@ -68,7 +71,7 @@ async function rankedIds(cfg: Config, q: string): Promise<string[]> {
 }
 
 const rows: string[] = [];
-for (const cfg of configs) {
+for (const cfg of selected) {
   for (const k of KEYS) delete process.env[k];
   Object.assign(process.env, cfg.env);
   resetNeuralState();

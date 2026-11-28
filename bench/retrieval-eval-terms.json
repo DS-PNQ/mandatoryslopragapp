@@ -1,0 +1,74 @@
+[
+ {
+  "q": "B\u00e9zout identity",
+  "gold": [
+   "number-theory#bezout-s-identity"
+  ]
+ },
+ {
+  "q": "Heine-Borel",
+  "gold": [
+   "continuity#compactness-and-the-heine-borel-theorem"
+  ]
+ },
+ {
+  "q": "KKT conditions",
+  "gold": [
+   "convex-optimization#lagrangian-duality-and-kkt-conditions"
+  ]
+ },
+ {
+  "q": "Gram-Schmidt",
+  "gold": [
+   "linear-algebra-spectral#inner-products-and-gram-schmidt"
+  ]
+ },
+ {
+  "q": "Basel problem",
+  "gold": [
+   "fourier#a-worked-example-and-the-basel-sum"
+  ]
+ },
+ {
+  "q": "Cauchy-Riemann equations",
+  "gold": [
+   "complex-analysis#holomorphic-functions-and-the-cauchy-riemann-equations"
+  ]
+ },
+ {
+  "q": "Jensen's inequality",
+  "gold": [
+   "convex-optimization#jensen-s-inequality"
+  ]
+ },
+ {
+  "q": "Laplace transform of y'",
+  "gold": [
+   "differential-equations#laplace-transform"
+  ]
+ },
+ {
+  "q": "L'H\u00f4pital",
+  "gold": [
+   "derivatives#l-hopital-s-rule"
+  ]
+ },
+ {
+  "q": "SVD",
+  "gold": [
+   "linear-algebra-spectral#singular-value-decomposition"
+  ]
+ },
+ {
+  "q": "BM25 saturation k1 b",
+  "gold": [
+   "nearest-neighbor-search#lexical-retrieval-with-bm25"
+  ]
+ },
+ {
+  "q": "IVF nprobe",
+  "gold": [
+   "nearest-neighbor-search#inverted-file-index-ivf"
+  ]
+ }
+]

@@ -17,7 +17,7 @@
 //   (LEMMA_EMBED_PROMPTS, else inferred from the model name):
 //     qwen3: "Instruct: <task>\nQuery: <q>" for queries, passages bare (the
 //            model card reports 1-5% lower retrieval without the instruction);
-//     gemma: "task: question answering | query: <q>" for queries and
+//     gemma: "task: search result | query: <q>" for queries and
 //            "title: <title> | text: <passage>" for passages (EmbeddingGemma 2).
 // - LEMMA_EMBED_DIM truncates vectors (Matryoshka) and renormalizes them; both
 //   models are trained for it (EmbeddingGemma 2: 768/512/256/128).
@@ -27,9 +27,11 @@
 // - LaTeX is verbalised for the embedder ("\sum" -> "sum"), since embedding
 //   natural-language statements of theorems beats embedding raw LaTeX
 //   (arXiv:2602.05216). The text the answer model reads is unchanged.
-// - Hybrid retrieval (lexical + dense, fused with RRF) followed by a
-//   cross-encoder rerank of the fused candidates is the strongest simple
-//   pipeline in recent benchmarks (e.g. arXiv:2604.01733).
+// - A cross-encoder rerank of the candidates is the strongest simple addition
+//   in recent benchmarks (e.g. arXiv:2604.01733). Those benchmarks also favour
+//   hybrid lexical + dense fusion, but on this app's maths questions equal-
+//   weight fusion hurt (bench/fusion-eval.ts), so the dense order decides and
+//   the lexical lists only break ties and backfill (lib/rag/hybrid.ts).
 
 import {createHash} from 'node:crypto';
 
@@ -70,9 +72,13 @@ function embedDim(): number {
   return Number.isInteger(n) && n >= 32 ? n : 0;
 }
 
-/** EmbeddingGemma 2 query task; "question answering" fits questions best (bench/embed-eval.ts). */
+/**
+ * EmbeddingGemma 2 query task. "search result" (its Retrieval-query prompt)
+ * beat "question answering" on bench/retrieval-eval.json: hit@1 76.9% vs 75.0%,
+ * MRR 0.851 vs 0.835.
+ */
 function gemmaTask(): string {
-  return process.env.LEMMA_EMBED_GEMMA_TASK?.trim() || 'question answering';
+  return process.env.LEMMA_EMBED_GEMMA_TASK?.trim() || 'search result';
 }
 
 export function embedConfig(): Endpoint | null {

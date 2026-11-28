@@ -92,3 +92,55 @@ test('LaTeX is verbalised for the embedder', async () => {
   const {verbalizeTex} = await import('../lib/rag/neural');
   assert.equal(verbalizeTex('$\\sum_{n} x^2 \\leq \\int f$'), 'sum _ n x squared less or equal integral f');
 });
+
+test('with an embedder the dense order decides; LEMMA_FUSION_WEIGHTS restores equal fusion', async () => {
+  const {getRetriever} = await import('../lib/rag/load');
+  const target = getRetriever().chunks.findIndex((c) => c.id === 'groups#cyclic-groups');
+  // An embedder that ranks "Cyclic groups" first for every query.
+  const emb = await serve((_p, body) => ({
+    data: body.input.map((s: string, index: number) => ({index, embedding: s.includes('Cyclic groups') || s.startsWith('Instruct') ? [1, 0] : [0, 1]})),
+  }));
+  process.env.LEMMA_EMBED_URL = emb.url;
+  try {
+    const {searchLibrary, resetLibraryEmbeddings} = await import('../lib/rag/hybrid');
+    const {resetNeuralState} = await import('../lib/rag/neural');
+    resetNeuralState();
+    resetLibraryEmbeddings();
+    const q = 'ratio test for series convergence';
+    const dense = await searchLibrary(q, 6);
+    assert.equal(dense.passages[0].chunk.id, getRetriever().chunks[target].id, 'dense first place is kept');
+    // Lexical-only matches come after the 20 dense candidates (backfill).
+    const wide = await searchLibrary(q, 40);
+    const firstSeries = wide.passages.findIndex((p) => p.chunk.id.startsWith('series#'));
+    assert.ok(firstSeries >= 20, `series passages follow the dense list (found at ${firstSeries})`);
+    process.env.LEMMA_FUSION_WEIGHTS = '1,1,1';
+    const equal = await searchLibrary(q, 6);
+    assert.notEqual(equal.passages[0].chunk.id, 'groups#cyclic-groups', 'equal weights let BM25 and LSA outvote it');
+  } finally {
+    delete process.env.LEMMA_EMBED_URL;
+    delete process.env.LEMMA_FUSION_WEIGHTS;
+    emb.server.close();
+  }
+});
+
+test('EmbeddingGemma 2 prompts and Matryoshka truncation', async () => {
+  const {passageForEmbedding, queryForEmbedding, embedFamily, embedQuery, resetNeuralState} = await import('../lib/rag/neural');
+  const emb = await serve((_p, body) => ({data: body.input.map((_s: string, index: number) => ({index, embedding: [3, 4, 12, 84]}))}));
+  process.env.LEMMA_EMBED_URL = emb.url;
+  process.env.LEMMA_EMBED_MODEL = 'embeddinggemma-2';
+  try {
+    assert.equal(embedFamily(), 'gemma');
+    assert.equal(queryForEmbedding('What is \\nabla f?'), 'task: search result | query: What is nabla gradient f?');
+    assert.equal(passageForEmbedding('Series § Ratio test', 'If L < 1'), 'title: Series § Ratio test | text: If L < 1');
+    process.env.LEMMA_EMBED_DIM = '64';
+    resetNeuralState();
+    assert.equal((await embedQuery('x'))!.length, 4, 'shorter than the vector: left whole');
+    process.env.LEMMA_EMBED_DIM = '32';
+    process.env.LEMMA_EMBED_MODEL = 'qwen3-embedding-0.6b';
+    assert.equal(embedFamily(), 'qwen3');
+    assert.match(queryForEmbedding('x'), /^Instruct: .*\nQuery: x$/);
+  } finally {
+    for (const k of ['LEMMA_EMBED_URL', 'LEMMA_EMBED_MODEL', 'LEMMA_EMBED_DIM']) delete process.env[k];
+    emb.server.close();
+  }
+});

@@ -44,6 +44,34 @@ export interface RetrievalResult {
 }
 
 const RRF_K = 60;
+
+/** Weight of each ranked list in reciprocal rank fusion. */
+export interface FusionWeights {
+  lsa: number;
+  bm25: number;
+  neural: number;
+}
+
+/** Without an embedder, LSA and BM25 are fused with equal weights. */
+export const EQUAL_FUSION: FusionWeights = {lsa: 1, bm25: 1, neural: 1};
+
+/**
+ * With an embedder: the dense order decides. LSA and BM25 get weights small
+ * enough that they can only break exact ties and add candidates after the
+ * dense ones (a dense gap between adjacent ranks is at least 1/(80*81), more
+ * than any 0.002/61 lexical bonus). On bench/retrieval-eval.json every weight
+ * that let BM25 or LSA reorder the dense list lowered hit@1 (Qwen3: 92.3% dense
+ * order, 69.2% equal weights); on the exact-term set they changed nothing.
+ */
+export const NEURAL_FUSION: FusionWeights = {lsa: 0.001, bm25: 0.001, neural: 1};
+
+/** NEURAL_FUSION, or LEMMA_FUSION_WEIGHTS="lsa,bm25,neural" when set. */
+export function neuralFusion(): FusionWeights {
+  const parts = (process.env.LEMMA_FUSION_WEIGHTS ?? '').split(',').map(Number);
+  return parts.length === 3 && parts.every((x) => Number.isFinite(x) && x >= 0)
+    ? {lsa: parts[0], bm25: parts[1], neural: parts[2]}
+    : NEURAL_FUSION;
+}
 const BM25_K1 = 1.2;
 const BM25_B = 0.75;
 
@@ -134,7 +162,13 @@ export class Retriever {
    * @param neural Optional neural dense ranking (chunk indices, best first),
    *   fused as a third list.
    */
-  search(query: string, topK = 6, nprobe = this.index.ivf.nprobe, neural?: {index: number; score: number}[]): RetrievalResult {
+  search(
+    query: string,
+    topK = 6,
+    nprobe = this.index.ivf.nprobe,
+    neural?: {index: number; score: number}[],
+    weights: FusionWeights = EQUAL_FUSION,
+  ): RetrievalResult {
     const started = performance.now();
     const {vector, known, unknown} = this.embed(query);
     const {k, centroids, lists, clusters} = this.index.ivf;
@@ -195,18 +229,18 @@ export class Retriever {
       const p = entry(doc);
       p.denseScore = score;
       p.denseRank = i + 1;
-      p.fused += 1 / (RRF_K + i + 1);
+      p.fused += weights.lsa / (RRF_K + i + 1);
     });
     lexical.slice(0, 20).forEach(([doc, score], i) => {
       const p = entry(doc);
       p.bm25Score = score;
       p.bm25Rank = i + 1;
-      p.fused += 1 / (RRF_K + i + 1);
+      p.fused += weights.bm25 / (RRF_K + i + 1);
     });
     neural?.slice(0, 20).forEach(({index}, i) => {
       const p = entry(index);
       p.neuralRank = i + 1;
-      p.fused += 1 / (RRF_K + i + 1);
+      p.fused += weights.neural / (RRF_K + i + 1);
     });
 
     const passages = [...fused.values()].sort((a, b) => b.fused - a.fused).slice(0, topK);
